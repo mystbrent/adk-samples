@@ -55,6 +55,47 @@ Be sure to update the following key variables:
 
 ### 4. Run Database Migrations
 
+If you're running the migrations for the first time, you need to initialize alembic:
+
+```bash
+# Initialize alembic configuration files
+poetry run alembic init alembic
+```
+
+You can use the provided example configuration files:
+
+```bash
+# Copy example files to their expected locations
+cp alembic.ini.example alembic.ini
+mkdir -p alembic/versions
+cp alembic/env.py.example alembic/env.py
+```
+
+Or customize your configuration:
+
+```bash
+# Edit alembic.ini to point to your database
+# Replace sqlalchemy.url = driver://user:pass@localhost/dbname with your database URL
+# For example: sqlalchemy.url = postgresql://postgres:postgres@localhost:5432/zenplify_agent
+
+# Edit alembic/env.py to import your models
+# Add the following imports at the top:
+# from src.database.session import Base
+# target_metadata = Base.metadata
+```
+
+Then run the migrations:
+
+```bash
+# Create an initial migration
+poetry run alembic revision --autogenerate -m "initial"
+
+# Apply the migration
+poetry run alembic upgrade head
+```
+
+If you've already set up alembic and just need to run migrations:
+
 ```bash
 # Make sure your database is running
 poetry run alembic upgrade head
@@ -104,6 +145,21 @@ docker-compose logs -f
 The API will be available at `http://localhost:8000`.
 
 ### 4. Run Database Migrations (First Time Only)
+
+For the Docker setup, you'll also need to initialize alembic if this is your first run:
+
+```bash
+# Initialize alembic inside the container
+docker-compose exec app poetry run alembic init alembic
+
+# Edit alembic.ini and alembic/env.py as described in the local setup instructions
+
+# Run migrations
+docker-compose exec app poetry run alembic revision --autogenerate -m "initial"
+docker-compose exec app poetry run alembic upgrade head
+```
+
+If alembic is already initialized:
 
 ```bash
 # Run migrations inside the container
@@ -167,6 +223,14 @@ If you encounter issues with Poetry:
 1. Check if Poetry is installed correctly: `poetry --version`
 2. Try to recreate the environment: `poetry env remove python && poetry install`
 
+### Alembic Migration Issues
+
+If you encounter the error `No config file 'alembic.ini' found`:
+
+1. Make sure you're in the project root directory
+2. Follow the initialization steps in the "Run Database Migrations" section
+3. Check that the alembic.ini file exists and has the correct configuration
+
 ### Permissions for Google Credentials
 
 Make sure the Google credentials file has the correct path and permissions:
@@ -181,4 +245,4 @@ chmod 600 /path/to/credentials.json
 - [Project Documentation](./README.md)
 - [Development Phases](./DEVELOPMENT_PHASES.md)
 - [Poetry Documentation](https://python-poetry.org/docs/)
-- [Google ADK Documentation](https://developers.google.com/agent-development-kit) 
+- [Google ADK Documentation](https://developers.google.com/agent-development-kit)

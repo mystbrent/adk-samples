@@ -35,6 +35,32 @@ poetry run python -m spacy download en_core_web_md
 echo "Generating Poetry lock file..."
 poetry lock
 
+# Initialize alembic if needed
+if [ ! -f "alembic.ini" ]; then
+    echo "Initializing alembic..."
+    poetry run alembic init alembic
+    
+    # Check if example files exist and copy them
+    if [ -f "alembic.ini.example" ]; then
+        echo "Copying alembic.ini.example to alembic.ini..."
+        cp alembic.ini.example alembic.ini
+    fi
+    
+    # Create alembic/versions directory if it doesn't exist
+    mkdir -p alembic/versions
+    
+    # Check if env.py example exists and copy it
+    if [ -f "alembic/env.py.example" ]; then
+        echo "Copying alembic/env.py.example to alembic/env.py..."
+        cp alembic/env.py.example alembic/env.py
+    fi
+    
+    echo ""
+    echo "IMPORTANT: Before running migrations:"
+    echo "1. Check alembic.ini to ensure the database URL is correct"
+    echo "2. Check alembic/env.py to ensure it correctly imports your models"
+fi
+
 echo "Migration completed!"
 echo ""
 echo "To run the application, use: poetry run start"
