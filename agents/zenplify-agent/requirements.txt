@@ -1,0 +1,43 @@
+# Core dependencies
+google-adk>=0.0.8
+fastapi>=0.104.0
+uvicorn>=0.23.2
+pydantic>=2.4.2
+python-dotenv>=1.0.0
+alembic>=1.12.0
+
+# Database
+sqlalchemy>=2.0.21
+psycopg2-binary>=2.9.7
+pgvector>=0.2.3
+
+# Resume parsing
+PyMuPDF>=1.23.3  # for PDF parsing
+python-docx>=0.8.11  # for DOCX parsing
+spacy>=3.7.2  # for NLP/NER
+en-core-web-md @ https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.7.0/en_core_web_md-3.7.0-py3-none-any.whl
+
+# GitHub integration
+PyGithub>=2.1.1
+requests>=2.31.0
+
+# LLM integration
+google-cloud-aiplatform>=1.36.1
+litellm>=0.10.1  # For potential multi-model support
+
+# Vector embeddings
+numpy>=1.26.0
+scikit-learn>=1.3.1
+
+# Security
+cryptography>=41.0.4
+pyjwt>=2.8.0
+
+# Testing
+pytest>=7.4.2
+pytest-cov>=4.1.0
+httpx>=0.25.0
+
+# Utilities
+loguru>=0.7.2
+tenacity>=8.2.3  # For retries 
