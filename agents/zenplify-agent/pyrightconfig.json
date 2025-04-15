@@ -1,0 +1,12 @@
+{
+    "extraPaths": [
+        "."
+    ],
+    "reportMissingImports": true,
+    "reportMissingTypeStubs": false,
+    "pythonVersion": "3.11",
+    "typeCheckingMode": "basic",
+    "useLibraryCodeForTypes": true,
+    "venvPath": "/Users/brenttudas/Library/Caches/pypoetry/virtualenvs",
+    "venv": "zenplify-agent-xj10FdKC-py3.11"
+} 

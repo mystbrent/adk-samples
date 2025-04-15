@@ -132,38 +132,58 @@ When using Docker Compose, make sure to set:
 - `DATABASE_URL=postgresql://postgres:postgres@db:5432/zenplify_agent` (using the service name)
 - Update all other required credentials
 
-### 3. Build and Start the Containers
+### 3. Start the Database Container
+
+Note: The application container is currently commented out in docker-compose.yml. You will need to run the application locally while using the containerized database.
 
 ```bash
-# Build and start all services
+# Start the PostgreSQL database with pgvector extension
 docker-compose up -d
 
 # View logs (optional)
 docker-compose logs -f
 ```
 
-The API will be available at `http://localhost:8000`.
+The PostgreSQL database will be available at `localhost:5432`.
 
-### 4. Run Database Migrations (First Time Only)
-
-For the Docker setup, you'll also need to initialize alembic if this is your first run:
+### 4. Run the Application Locally with the Containerized Database
 
 ```bash
-# Initialize alembic inside the container
-docker-compose exec app poetry run alembic init alembic
+# Update your .env file to point to the containerized database:
+# DATABASE_URL=postgresql://postgres:postgres@localhost:5432/zenplify_agent
 
-# Edit alembic.ini and alembic/env.py as described in the local setup instructions
+# Then run the application locally
+poetry run start
+```
 
-# Run migrations
-docker-compose exec app poetry run alembic revision --autogenerate -m "initial"
-docker-compose exec app poetry run alembic upgrade head
+The API will be available at `http://localhost:8000`.
+
+### 5. Run Database Migrations
+
+For the initial setup, you'll need to initialize alembic:
+
+```bash
+# Initialize alembic configuration files
+poetry run alembic init alembic
+
+# Copy example files to their expected locations
+cp alembic.ini.example alembic.ini
+mkdir -p alembic/versions
+cp alembic/env.py.example alembic/env.py
+
+# Make sure your DATABASE_URL in .env points to the containerized database
+# postgresql://postgres:postgres@localhost:5432/zenplify_agent
+
+# Create and apply migrations
+poetry run alembic revision --autogenerate -m "initial"
+poetry run alembic upgrade head
 ```
 
 If alembic is already initialized:
 
 ```bash
-# Run migrations inside the container
-docker-compose exec app poetry run alembic upgrade head
+# Make sure your database is running
+poetry run alembic upgrade head
 ```
 
 ## Using the API
@@ -216,6 +236,22 @@ If you encounter database connection issues:
 2. Check the `DATABASE_URL` in your `.env` file
 3. For Docker setup, check if the database container is healthy: `docker-compose ps`
 
+### Docker Compose Configuration
+
+The application service is currently commented out in docker-compose.yml:
+
+1. This is intentional - you should run the application locally using Poetry
+2. Only the database service will be started with `docker-compose up -d`
+3. Make sure your DATABASE_URL points to localhost:5432 when using the containerized database
+
+If you want to enable the container for the application as well:
+
+```bash
+# Uncomment the app section in docker-compose.yml, then run:
+docker-compose up -d
+# This will start both the database and application containers
+```
+
 ### Poetry Environment Issues
 
 If you encounter issues with Poetry:
@@ -239,6 +275,32 @@ Make sure the Google credentials file has the correct path and permissions:
 # Check file permissions
 chmod 600 /path/to/credentials.json
 ```
+
+### Google ADK Version Compatibility Issues
+
+If you encounter an error like:
+```
+ImportError: cannot import name 'api_server' from 'google.adk'
+```
+
+This is due to API changes in the Google ADK v0.1.0 release. To fix this issue:
+
+1. Run the helper script to update imports and dependencies:
+   ```bash
+   python scripts/fix_adk_imports.py
+   ```
+
+2. Reinstall dependencies:
+   ```bash
+   poetry install
+   ```
+
+3. Ensure you're using the correct version of Google ADK (v0.1.0):
+   ```bash
+   poetry add google-adk@0.1.0
+   ```
+
+You can verify the release information at the [official GitHub repository](https://github.com/google/adk-python/releases).
 
 ## Additional Resources
 
