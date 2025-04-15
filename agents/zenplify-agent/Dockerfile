@@ -1,48 +1,47 @@
-# Use multi-stage build for smaller final image
-FROM python:3.11-slim-bookworm AS builder
-
-# Set working directory
-WORKDIR /app
-
-# Install system dependencies required for Python packages
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Second stage - runtime image
-FROM python:3.11-slim-bookworm
-
-# Set working directory
-WORKDIR /app
-
-# Copy installed packages from builder stage
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
-
-# Create non-root user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+FROM python:3.11-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/app:${PATH}"
+    POETRY_VERSION=1.6.1 \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_VIRTUALENVS_IN_PROJECT=false \
+    POETRY_NO_INTERACTION=1
 
-# Copy application code
+# Set work directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN curl -sSL https://install.python-poetry.org | python3 -
+ENV PATH="$POETRY_HOME/bin:$PATH"
+
+# Copy only requirements to cache them in docker layer
+COPY pyproject.toml poetry.lock* ./
+
+# Install project dependencies
+RUN poetry config virtualenvs.create false \
+    && poetry install --no-dev --no-interaction --no-ansi
+
+# Copy project files
 COPY . .
 
-# Set proper ownership
-RUN chown -R appuser:appuser /app
+# Install spaCy model
+RUN python -m spacy download en_core_web_md
 
-# Switch to non-root user
+# Run as non-root user
+RUN useradd -m appuser
 USER appuser
 
-# Expose port for API
+# Expose port
 EXPOSE 8000
 
 # Command to run the application
-CMD ["python", "-m", "src.main"] 
+CMD ["poetry", "run", "start"] 

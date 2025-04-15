@@ -37,47 +37,50 @@ The system follows a multi-agent architecture using Google's ADK framework:
 
 ## Setup Instructions
 
+For detailed setup instructions, please refer to the [Setup Guide](./SETUP_GUIDE.md).
+
 ### Prerequisites
 
 - Python 3.11+
+- Poetry (dependency management)
 - PostgreSQL with pgvector extension
 - Docker (for containerization)
 - Google Cloud account (for Vertex AI access)
 
-### Installation
+### Quick Start
 
-1. Clone the repository
+1. Install Poetry if you haven't already:
+   ```bash
+   curl -sSL https://install.python-poetry.org | python3 -
+   ```
+
+2. Clone the repository and install dependencies:
    ```bash
    git clone https://github.com/your-org/zenplify-agent.git
    cd zenplify-agent
+   poetry install
    ```
 
-2. Create a virtual environment
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. Install dependencies
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. Set up environment variables
+3. Set up environment variables:
    ```bash
    cp .env.example .env
    # Edit .env with your configuration values
    ```
 
-5. Run database migrations
+4. Run database migrations:
    ```bash
-   alembic upgrade head
+   poetry run alembic upgrade head
    ```
 
-6. Start the development server
+5. Start the development server:
    ```bash
-   python -m src.main
+   poetry run start
    ```
+
+Alternatively, use Docker Compose:
+```bash
+docker-compose up -d
+```
 
 ## Project Structure
 

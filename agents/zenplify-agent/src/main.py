@@ -70,12 +70,16 @@ adk_app = api_server.initialize(get_root_agent())
 # Mount ADK app endpoints under '/adk' path
 app.mount("/adk", adk_app)
 
-# Run the server if executed directly
-if __name__ == "__main__":
+def run_app():
+    """Entry point for Poetry script to run the application."""
     import uvicorn
     
     host = os.getenv("API_HOST", "0.0.0.0")
     port = int(os.getenv("API_PORT", "8000"))
     
     logger.info(f"Starting Zenplify LLM Agent on {host}:{port}")
-    uvicorn.run("src.main:app", host=host, port=port, reload=True) 
+    uvicorn.run("src.main:app", host=host, port=port, reload=True)
+
+# Run the server if executed directly
+if __name__ == "__main__":
+    run_app() 
