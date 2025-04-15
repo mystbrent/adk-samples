@@ -7,9 +7,17 @@ question-answer pairs using semantic search capabilities.
 
 import os
 import logging
+import uuid
 from typing import Dict, Any, List, Optional
+from sqlalchemy.orm import Session
+from uuid import UUID
 from google.adk import Agent, AgentBuilder, LlmAgent, FunctionTool, VertexAiLlm, ToolContext
 from dotenv import load_dotenv
+
+# Import local services
+from src.database.session import get_db
+from src.services.qa_service import QAService
+from src.services.embedding_service import EmbeddingService
 
 # Load environment variables
 load_dotenv()
@@ -41,28 +49,43 @@ def search_qa_history_tool(
     """
     logger.info(f"Searching Q&A history for question: {question}")
     
-    # In a real implementation, you would:
-    # 1. Generate an embedding for the question
-    # 2. Search the database for similar question embeddings
-    # 3. Return matches above the similarity threshold
+    # Convert string user_id to UUID
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError:
+        logger.error(f"Invalid user_id format: {user_id}")
+        return {"matches": [], "error": "Invalid user_id format"}
     
-    # Placeholder response
-    return {
-        "matches": [
+    # Create a database session
+    db = next(get_db())
+    qa_service = QAService(db)
+    
+    try:
+        # Find similar questions using the QA service
+        similar_questions = qa_service.find_similar_questions(
+            user_id=user_uuid,
+            question=question,
+            min_similarity=min_similarity,
+            limit=5
+        )
+        
+        # Convert to the expected format
+        matches = [
             {
-                "question": "What are your strongest technical skills?",
-                "answer": "My strongest technical skills are Python programming, machine learning, and cloud infrastructure.",
-                "similarity": 0.92,
-                "context": {"company": "Example Corp", "job_title": "ML Engineer"}
-            },
-            {
-                "question": "Describe your technical expertise.",
-                "answer": "I have expertise in Python, JavaScript, SQL, AWS, and machine learning, with 5+ years of professional experience.",
-                "similarity": 0.85,
-                "context": {"company": "Tech Innovators", "job_title": "Senior Developer"}
+                "question": q["question"],
+                "answer": q["answer"],
+                "similarity": q["similarity"],
+                "context": q["context"]
             }
+            for q in similar_questions
         ]
-    }
+        
+        return {"matches": matches}
+    except Exception as e:
+        logger.error(f"Error searching QA history: {e}")
+        return {"matches": [], "error": str(e)}
+    finally:
+        db.close()
 
 def generate_question_embedding_tool(
     tool_context: ToolContext,
@@ -80,17 +103,31 @@ def generate_question_embedding_tool(
     """
     logger.info(f"Generating embedding for question: {question}")
     
-    # In a real implementation, you would:
-    # 1. Call an embedding model API (e.g., Vertex AI text embeddings)
-    # 2. Process the response
-    # 3. Return the embedding vector
+    # Initialize embedding service
+    embedding_service = EmbeddingService()
     
-    # Placeholder response (just a few random values representing a vector)
-    return {
-        "embedding": [0.1, 0.2, 0.3, 0.4, 0.5],  # This would normally be a much larger vector
-        "model": GEMINI_EMBEDDING_MODEL,
-        "dimension": 768,  # Example dimension, depends on the model
-    }
+    try:
+        # Generate embedding
+        embedding = embedding_service.get_embedding(question)
+        
+        if embedding:
+            return {
+                "embedding": embedding,
+                "model": GEMINI_EMBEDDING_MODEL,
+                "dimension": len(embedding)
+            }
+        else:
+            logger.error("Failed to generate embedding")
+            return {
+                "embedding": None,
+                "error": "Failed to generate embedding"
+            }
+    except Exception as e:
+        logger.error(f"Error generating embedding: {e}")
+        return {
+            "embedding": None,
+            "error": str(e)
+        }
 
 def store_qa_pair_tool(
     tool_context: ToolContext,
@@ -114,16 +151,42 @@ def store_qa_pair_tool(
     """
     logger.info(f"Storing Q&A pair: {question} -> {answer}")
     
-    # In a real implementation, you would:
-    # 1. Generate an embedding for the question
-    # 2. Store the Q&A pair and embedding in the database
+    # Convert string user_id to UUID
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError:
+        logger.error(f"Invalid user_id format: {user_id}")
+        return {
+            "status": "error",
+            "message": "Invalid user_id format"
+        }
     
-    # Placeholder response
-    return {
-        "status": "success",
-        "message": "Q&A pair stored successfully",
-        "qa_id": "123e4567-e89b-12d3-a456-426614174000",  # Example UUID
-    }
+    # Create a database session
+    db = next(get_db())
+    qa_service = QAService(db)
+    
+    try:
+        # Store Q&A pair using the QA service
+        result = qa_service.save_qa_pair(
+            user_id=user_uuid,
+            question=question,
+            answer=answer,
+            context=context
+        )
+        
+        return {
+            "status": "success",
+            "message": "Q&A pair stored successfully",
+            "qa_id": result["id"]
+        }
+    except Exception as e:
+        logger.error(f"Error storing QA pair: {e}")
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+    finally:
+        db.close()
 
 def generate_answer_tool(
     tool_context: ToolContext,
@@ -145,17 +208,45 @@ def generate_answer_tool(
     """
     logger.info(f"Generating answer for question: {question}")
     
-    # In a real implementation, you would:
-    # 1. Retrieve relevant user profile data
-    # 2. Use the LLM to generate a personalized answer
-    # 3. Possibly check against previous answers for consistency
+    # Convert string user_id to UUID
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError:
+        logger.error(f"Invalid user_id format: {user_id}")
+        return {
+            "answer": None,
+            "confidence": 0,
+            "source": None,
+            "error": "Invalid user_id format"
+        }
     
-    # Placeholder response
-    return {
-        "answer": "I have 5 years of experience with Python development, including work on machine learning projects and web applications.",
-        "confidence": 0.8,
-        "source": "llm_generation",
-    }
+    # Create a database session
+    db = next(get_db())
+    qa_service = QAService(db)
+    
+    try:
+        # Generate answer using the QA service
+        suggestion = qa_service.suggest_answer(
+            user_id=user_uuid,
+            question=question,
+            context=context
+        )
+        
+        return {
+            "answer": suggestion["suggestion"],
+            "confidence": suggestion["confidence"],
+            "source": suggestion["source"]
+        }
+    except Exception as e:
+        logger.error(f"Error generating answer: {e}")
+        return {
+            "answer": None,
+            "confidence": 0,
+            "source": None,
+            "error": str(e)
+        }
+    finally:
+        db.close()
 
 def get_qna_agent() -> Agent:
     """

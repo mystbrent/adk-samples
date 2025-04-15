@@ -14,6 +14,7 @@ from sqlalchemy import func
 
 from src.database.models import User, QAHistory
 from src.services.user_service import UserService
+from src.services.embedding_service import EmbeddingService
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ class QAService:
         """
         self.db = db
         self.user_service = UserService(db)
+        self.embedding_service = EmbeddingService()
     
     def suggest_answer(
         self, 
@@ -249,7 +251,7 @@ class QAService:
         """
         Generate embedding vector for text.
         
-        In a real implementation, this would call an embedding model API.
+        Uses the EmbeddingService to get embeddings from Vertex AI.
         
         Args:
             text: Text to embed
@@ -257,13 +259,7 @@ class QAService:
         Returns:
             List[float]: Embedding vector or None if generation fails
         """
-        # Placeholder - in a real implementation, this would call a model API
-        # like Vertex AI text embeddings or OpenAI embeddings
-        logger.info(f"Generating embedding for text: {text[:50]}...")
-        
-        # Return a dummy vector of appropriate dimension
-        # This would normally be the actual embedding from the model
-        return [0.1] * 768  # Example dimension for a text embedding model
+        return self.embedding_service.get_embedding(text)
     
     def _generate_answer_from_profile(
         self, 
