@@ -1,6 +1,7 @@
 {
     "extraPaths": [
-        "."
+        ".",
+        "./src"
     ],
     "reportMissingImports": true,
     "reportMissingTypeStubs": false,
@@ -8,5 +9,15 @@
     "typeCheckingMode": "basic",
     "useLibraryCodeForTypes": true,
     "venvPath": "/Users/brenttudas/Library/Caches/pypoetry/virtualenvs",
-    "venv": "zenplify-agent-xj10FdKC-py3.11"
+    "venv": "zenplify-agent-xj10FdKC-py3.11",
+    "executionEnvironments": [
+        {
+            "root": ".",
+            "extraPaths": [
+                "."
+            ],
+            "pythonVersion": "3.11",
+            "pythonPlatform": "Darwin"
+        }
+    ]
 } 

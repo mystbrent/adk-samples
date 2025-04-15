@@ -1,0 +1,21 @@
+{
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+    "settings": {
+        "python.defaultInterpreterPath": "/Users/brenttudas/Library/Caches/pypoetry/virtualenvs/zenplify-agent-xj10FdKC-py3.11/bin/python",
+        "python.interpreter.infoVisibility": "always",
+        "python.analysis.extraPaths": [
+            ".",
+            "./src"
+        ],
+        "python.linting.enabled": true,
+        "python.analysis.autoImportCompletions": true,
+        "python.analysis.typeCheckingMode": "basic",
+        "python.terminal.activateEnvironment": true,
+        "python.poetryPath": "poetry",
+        "python.venvPath": "/Users/brenttudas/Library/Caches/pypoetry/virtualenvs"
+    }
+} 
