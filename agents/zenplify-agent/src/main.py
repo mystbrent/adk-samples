@@ -10,7 +10,8 @@ import logging
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from google.adk import api_server
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
 
 # Import local modules
 from src.api.router import router as api_router
@@ -58,17 +59,36 @@ async def startup_event():
     logger.info("Initializing ADK agent")
     # Additional agent initialization can go here
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Clean up resources on shutdown."""
-    logger.info("Shutting down application")
-    # Clean up any resources here
+# Create ADK Runner with in-memory session service
+session_service = InMemorySessionService()
+adk_runner = Runner(
+    app_name="zenplify-agent",
+    agent=get_root_agent(),
+    session_service=session_service
+)
 
-# Direct ADK API server initialization
-adk_app = api_server.initialize(get_root_agent())
+# Create FastAPI endpoints for ADK
+@app.post("/adk/run")
+async def run_agent(user_id: str, session_id: str, message: str):
+    """Run the agent with a new message."""
+    events = []
+    async for event in adk_runner.run_async(
+        user_id=user_id,
+        session_id=session_id,
+        new_message={"role": "user", "parts": [{"text": message}]}
+    ):
+        events.append(event)
+    return {"events": events}
 
-# Mount ADK app endpoints under '/adk' path
-app.mount("/adk", adk_app)
+@app.post("/adk/sessions/{user_id}")
+async def create_session(user_id: str, session_id: str = None):
+    """Create a new session for the user."""
+    session = session_service.create_session(
+        app_name="zenplify-agent",
+        user_id=user_id,
+        session_id=session_id
+    )
+    return {"session_id": session.session_id}
 
 def run_app():
     """Entry point for Poetry script to run the application."""
