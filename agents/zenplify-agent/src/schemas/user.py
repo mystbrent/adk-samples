@@ -117,7 +117,8 @@ class UserSkillResponse(UserSkillBase):
 class UserProfileResponse(BaseModel):
     """Response model for user profile data."""
     id: UUID
-    full_name: str
+    first_name: str
+    last_name: str
     email: EmailStr
     phone: Optional[str] = None
     address_json: Optional[Dict[str, Any]] = Field(None, alias="address")
@@ -131,6 +132,11 @@ class UserProfileResponse(BaseModel):
     work_experiences: List[WorkExperienceResponse] = []
     educations: List[EducationResponse] = []
     skills: List[UserSkillResponse] = []
+    
+    @property
+    def full_name(self) -> str:
+        """Combine first_name and last_name into full_name."""
+        return f"{self.first_name} {self.last_name}".strip()
     
     class Config:
         orm_mode = True

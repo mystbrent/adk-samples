@@ -80,9 +80,15 @@ class UserService:
         # Create address JSON if provided
         address_json = user_data.address.dict() if user_data.address else None
         
+        # Split full_name into first_name and last_name
+        name_parts = user_data.full_name.split(' ', 1)
+        first_name = name_parts[0]
+        last_name = name_parts[1] if len(name_parts) > 1 else ""
+        
         # Create user object
         user = User(
-            full_name=user_data.full_name,
+            first_name=first_name,
+            last_name=last_name,
             email=user_data.email,
             phone=user_data.phone,
             address_json=address_json,
@@ -143,7 +149,9 @@ class UserService:
         
         # Update basic fields if provided
         if user_data.full_name is not None:
-            user.full_name = user_data.full_name
+            name_parts = user_data.full_name.split(' ', 1)
+            user.first_name = name_parts[0]
+            user.last_name = name_parts[1] if len(name_parts) > 1 else ""
         if user_data.email is not None:
             user.email = user_data.email
         if user_data.phone is not None:
