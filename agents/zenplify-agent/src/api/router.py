@@ -86,15 +86,22 @@ async def get_autofill_data(
     """
     autofill_service = AutofillService(db)
     try:
+        # Convert context to dict if it's a Pydantic model
+        context = request.context
+        if context and hasattr(context, "dict"):
+            context = context.dict()
+            
         autofill_data = autofill_service.get_autofill_data(
             user_id=request.user_id,
-            context=request.context
+            context=context
         )
         return autofill_data
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         # Log the error
+        import logging
+        logging.error(f"Autofill error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate autofill data")
 
 @router.post("/unidentified-fields/suggest/", response_model=UnidentifiedFieldSuggestion)

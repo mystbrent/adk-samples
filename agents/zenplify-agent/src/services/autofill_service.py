@@ -204,6 +204,68 @@ class AutofillService:
             logger.error(f"Error retrieving Q&A history: {e}")
             return {"qa_pairs": []}
     
+    def get_autofill_data(self, user_id: UUID, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Get autofill data for a form based on the user ID and context.
+        
+        Args:
+            user_id: UUID of the user
+            context: Optional context with form fields and job info
+            
+        Returns:
+            AutofillResponse with formatted data for form autofill
+        """
+        try:
+            # Get user profile data
+            profile_data = self.get_user_profile_data(user_id)
+            
+            # Form fields to autofill
+            form_fields = []
+            if context and isinstance(context, dict) and 'form_fields' in context and context['form_fields']:
+                form_fields = context['form_fields']
+            else:
+                # Default set of common fields if none provided
+                form_fields = [
+                    "first_name", "last_name", "email", "phone", "address", "city", "state", 
+                    "zip", "country", "education", "experience", "skills", "linkedin", "github",
+                    "current_role", "current_company"
+                ]
+            
+            # Format data for autofill
+            formatted_data = self.format_for_autofill(user_id, form_fields, context)
+            
+            # Convert to Zenplify format
+            # Convert generic field names to Zenplify field names
+            zenplify_data = {
+                "firstName": formatted_data.get("first_name", ""),
+                "lastName": formatted_data.get("last_name", ""),
+                "email": formatted_data.get("email", ""),
+                "phone": formatted_data.get("phone", ""),
+                "address": formatted_data.get("address", ""),
+                "city": formatted_data.get("city", ""),
+                "state": formatted_data.get("state", ""),
+                "zip": formatted_data.get("zip", ""),
+                "country": formatted_data.get("country", ""),
+                "education": formatted_data.get("education", ""),
+                "experience": formatted_data.get("experience", ""),
+                "skills": formatted_data.get("skills", ""),
+                "linkedin": formatted_data.get("linkedin", ""),
+                "github": formatted_data.get("github", ""),
+                "portfolio": formatted_data.get("portfolio", ""),
+                "website": formatted_data.get("website", ""),
+                "company": formatted_data.get("current_company", ""),
+                "currentJob": formatted_data.get("current_role", "")
+            }
+            
+            # Return as AutofillResponse
+            from src.schemas.autofill import ZenplifyUserData, AutofillResponse
+            return {"user_data": zenplify_data}
+            
+        except Exception as e:
+            logger.error(f"Error generating autofill data: {e}")
+            # Re-raise for HTTP error handling
+            raise
+
     def format_for_autofill(self, user_id: UUID, form_fields: List[str], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Format data for form autofill based on requested fields.
