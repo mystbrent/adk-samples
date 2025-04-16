@@ -12,11 +12,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
+from google.adk import Agent
 
 # Import local modules
 from src.api.router import router as api_router
 from src.database.session import engine, Base
-from src.agents.orchestrator import get_root_agent
 
 # Load environment variables
 load_dotenv()
@@ -59,11 +59,19 @@ async def startup_event():
     logger.info("Initializing ADK agent")
     # Additional agent initialization can go here
 
+# Create a simple agent for now
+def get_simple_agent() -> Agent:
+    """Create a simple agent for testing."""
+    return Agent(
+        name="zenplify_agent",
+        description="AI agent for automated job application form filling"
+    )
+
 # Create ADK Runner with in-memory session service
 session_service = InMemorySessionService()
 adk_runner = Runner(
     app_name="zenplify-agent",
-    agent=get_root_agent(),
+    agent=get_simple_agent(),
     session_service=session_service
 )
 

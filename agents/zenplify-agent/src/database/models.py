@@ -38,7 +38,8 @@ class User(Base):
     __tablename__ = "users"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    full_name = Column(String(255), nullable=False)
+    first_name = Column(String(255), nullable=False)
+    last_name = Column(String(255), nullable=False)
     email = Column(String(255), unique=True, nullable=False)
     phone = Column(String(50), nullable=True)
     address_json = Column(JSONB, nullable=True)  # Structured address components
@@ -56,9 +57,30 @@ class User(Base):
     skills = relationship("UserSkill", back_populates="user", cascade="all, delete-orphan")
     qa_history = relationship("QAHistory", back_populates="user", cascade="all, delete-orphan")
     saved_jobs = relationship("SavedJob", back_populates="user", cascade="all, delete-orphan")
+    profile = relationship("UserProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    qa_pairs = relationship("QAPair", back_populates="user", cascade="all, delete-orphan")
+    jobs = relationship("Job", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
-        return f"<User {self.full_name}>"
+        return f"<User {self.first_name} {self.last_name}>"
+
+
+class UserProfile(Base):
+    """Extended user profile data stored as JSON."""
+    
+    __tablename__ = "user_profiles"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    data = Column(JSONB, nullable=False, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    user = relationship("User", back_populates="profile")
+    
+    def __repr__(self):
+        return f"<UserProfile for User {self.user_id}>"
 
 
 class WorkExperience(Base):
@@ -180,4 +202,69 @@ class SavedJob(Base):
     user = relationship("User", back_populates="saved_jobs")
 
     def __repr__(self):
-        return f"<SavedJob {self.company_name} - {self.job_title}>" 
+        return f"<SavedJob {self.company_name} - {self.job_title}>"
+
+
+class QAPair(Base):
+    """Question and answer pairs for application forms."""
+    
+    __tablename__ = "qa_pairs"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    question = Column(Text, nullable=False)
+    answer = Column(Text, nullable=False)
+    context = Column(JSONB, nullable=True)  # Context info like company, job
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    user = relationship("User", back_populates="qa_pairs")
+    
+    def __repr__(self):
+        return f"<QAPair {self.question[:30]}...>"
+
+
+class Company(Base):
+    """Company information for job applications."""
+    
+    __tablename__ = "companies"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(255), nullable=False)
+    website = Column(String(512), nullable=True)
+    industry = Column(String(255), nullable=True)
+    size = Column(String(100), nullable=True)  # E.g., "1-10", "11-50", "51-200", etc.
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    jobs = relationship("Job", back_populates="company", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<Company {self.name}>"
+
+
+class Job(Base):
+    """Job listing information."""
+    
+    __tablename__ = "jobs"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    url = Column(String(512), nullable=True)
+    status = Column(String(50), nullable=False, default="Saved")  # "Saved", "Applied", "Interviewing", etc.
+    applied_date = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    user = relationship("User", back_populates="jobs")
+    company = relationship("Company", back_populates="jobs")
+    
+    def __repr__(self):
+        return f"<Job {self.title}>" 

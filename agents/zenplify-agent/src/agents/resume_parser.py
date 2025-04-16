@@ -8,7 +8,10 @@ and extracting structured data for user profiles.
 import os
 import logging
 from typing import Dict, Any, List, Optional
-from google.adk import Agent, AgentBuilder, LlmAgent, FunctionTool, VertexAiLlm, ToolContext
+from google.adk import Agent
+from google.adk.agents import LlmAgent
+from google.adk.tools import FunctionTool, tool_context
+from google.adk.models.google_llm import Gemini
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -21,7 +24,7 @@ logger = logging.getLogger(__name__)
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
 
 def parse_resume_file_tool(
-    tool_context: ToolContext,
+    tool_context: tool_context,
     file_content: bytes,
     file_format: str
 ) -> Dict[str, Any]:
@@ -75,7 +78,7 @@ def parse_resume_file_tool(
     }
 
 def extract_resume_section_tool(
-    tool_context: ToolContext,
+    tool_context: tool_context,
     file_content: bytes,
     file_format: str,
     section: str
@@ -152,32 +155,11 @@ def get_resume_parser_agent() -> Agent:
         Agent: Configured ResumeParserAgent
     """
     # Define tools
-    parse_resume_tool = FunctionTool(
-        name="parse_resume_file",
-        description="Parse a resume file and extract structured data",
-        function=parse_resume_file_tool
-    )
+    parse_resume_tool = FunctionTool(parse_resume_file_tool)
+    extract_section_tool = FunctionTool(extract_resume_section_tool)
     
-    extract_section_tool = FunctionTool(
-        name="extract_resume_section",
-        description="Extract a specific section from a resume file",
-        function=extract_resume_section_tool
-    )
-    
-    # Create the agent
-    resume_parser = AgentBuilder.create()
-    
-    # Add tools
-    resume_parser.with_tools([
-        parse_resume_tool,
-        extract_section_tool,
-    ])
-    
-    # Configure LLM
-    resume_parser.with_llm(VertexAiLlm(model_name=GEMINI_MODEL))
-    
-    # Set system prompt
-    resume_parser.with_system_prompt("""
+    # System prompt
+    system_prompt = """
     You are a Resume Parser Agent, specialized in extracting structured information from resume files.
     Your goal is to accurately identify and extract key information such as:
     
@@ -188,7 +170,11 @@ def get_resume_parser_agent() -> Agent:
     
     You can parse different file formats (PDF, DOCX, TXT) and handle various resume layouts and styles.
     Always strive for accuracy and completeness in your extraction.
-    """)
+    """
     
-    # Build and return the agent
-    return resume_parser.build() 
+    # Create and return the agent
+    return LlmAgent(
+        llm=Gemini(model_name=GEMINI_MODEL),
+        system_prompt=system_prompt,
+        tools=[parse_resume_tool, extract_section_tool]
+    ) 

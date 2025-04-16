@@ -8,7 +8,10 @@ to extract useful profile information for the user.
 import os
 import logging
 from typing import Dict, Any, List, Optional
-from google.adk import Agent, AgentBuilder, LlmAgent, FunctionTool, VertexAiLlm, ToolContext
+from google.adk import Agent
+from google.adk.agents import LlmAgent
+from google.adk.tools import FunctionTool, tool_context
+from google.adk.models.google_llm import Gemini
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -21,7 +24,7 @@ logger = logging.getLogger(__name__)
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
 
 def fetch_github_profile_tool(
-    tool_context: ToolContext,
+    tool_context: tool_context,
     username: str
 ) -> Dict[str, Any]:
     """
@@ -57,7 +60,7 @@ def fetch_github_profile_tool(
     }
 
 def fetch_github_repositories_tool(
-    tool_context: ToolContext,
+    tool_context: tool_context,
     username: str,
     limit: Optional[int] = 10,
     include_forks: bool = False
@@ -117,7 +120,7 @@ def fetch_github_repositories_tool(
     }
 
 def extract_skills_from_github_tool(
-    tool_context: ToolContext,
+    tool_context: tool_context,
     username: str
 ) -> Dict[str, Any]:
     """
@@ -157,39 +160,12 @@ def get_github_agent() -> Agent:
         Agent: Configured GitHubProfileAgent
     """
     # Define tools
-    profile_tool = FunctionTool(
-        name="fetch_github_profile",
-        description="Fetch GitHub profile information for a user",
-        function=fetch_github_profile_tool
-    )
+    profile_tool = FunctionTool(fetch_github_profile_tool)
+    repositories_tool = FunctionTool(fetch_github_repositories_tool)
+    skills_tool = FunctionTool(extract_skills_from_github_tool)
     
-    repositories_tool = FunctionTool(
-        name="fetch_github_repositories",
-        description="Fetch a user's GitHub repositories and language statistics",
-        function=fetch_github_repositories_tool
-    )
-    
-    skills_tool = FunctionTool(
-        name="extract_skills_from_github",
-        description="Extract skills and technologies from GitHub profile and repositories",
-        function=extract_skills_from_github_tool
-    )
-    
-    # Create the agent
-    github_agent = AgentBuilder.create()
-    
-    # Add tools
-    github_agent.with_tools([
-        profile_tool,
-        repositories_tool,
-        skills_tool,
-    ])
-    
-    # Configure LLM
-    github_agent.with_llm(VertexAiLlm(model_name=GEMINI_MODEL))
-    
-    # Set system prompt
-    github_agent.with_system_prompt("""
+    # System prompt
+    system_prompt = """
     You are a GitHub Profile Agent, specialized in extracting meaningful information from GitHub profiles.
     Your goal is to gather relevant data from a user's GitHub account, including:
     
@@ -198,8 +174,12 @@ def get_github_agent() -> Agent:
     - Skills and technologies (programming languages, frameworks, tools)
     
     You should focus on identifying information that would be valuable for job applications,
-    such as technical skills, project experience, and activity level.
-    """)
+    such as demonstrating technical skills, project experience, and activity level.
+    """
     
-    # Build and return the agent
-    return github_agent.build() 
+    # Create and return the agent
+    return LlmAgent(
+        llm=Gemini(model_name=GEMINI_MODEL),
+        system_prompt=system_prompt,
+        tools=[profile_tool, repositories_tool, skills_tool]
+    ) 

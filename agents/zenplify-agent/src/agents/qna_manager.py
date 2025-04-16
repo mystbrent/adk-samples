@@ -11,7 +11,10 @@ import uuid
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 from uuid import UUID
-from google.adk import Agent, AgentBuilder, LlmAgent, FunctionTool, VertexAiLlm, ToolContext
+from google.adk import Agent
+from google.adk.agents import LlmAgent
+from google.adk.tools import FunctionTool, tool_context
+from google.adk.models.google_llm import Gemini
 from dotenv import load_dotenv
 
 # Import local services
@@ -30,7 +33,7 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
 GEMINI_EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "textembedding-gecko")
 
 def search_qa_history_tool(
-    tool_context: ToolContext,
+    tool_context: tool_context,
     user_id: str,
     question: str,
     min_similarity: float = 0.7
@@ -88,7 +91,7 @@ def search_qa_history_tool(
         db.close()
 
 def generate_question_embedding_tool(
-    tool_context: ToolContext,
+    tool_context: tool_context,
     question: str
 ) -> Dict[str, Any]:
     """
@@ -130,7 +133,7 @@ def generate_question_embedding_tool(
         }
 
 def store_qa_pair_tool(
-    tool_context: ToolContext,
+    tool_context: tool_context,
     user_id: str,
     question: str,
     answer: str,
@@ -189,7 +192,7 @@ def store_qa_pair_tool(
         db.close()
 
 def generate_answer_tool(
-    tool_context: ToolContext,
+    tool_context: tool_context,
     user_id: str,
     question: str,
     context: Optional[Dict[str, Any]] = None
@@ -260,46 +263,13 @@ def get_qna_agent() -> Agent:
         Agent: Configured QnAManagerAgent
     """
     # Define tools
-    search_tool = FunctionTool(
-        name="search_qa_history",
-        description="Search Q&A history for similar questions using semantic search",
-        function=search_qa_history_tool
-    )
+    search_tool = FunctionTool(search_qa_history_tool)
+    embedding_tool = FunctionTool(generate_question_embedding_tool)
+    store_tool = FunctionTool(store_qa_pair_tool)
+    generate_tool = FunctionTool(generate_answer_tool)
     
-    embedding_tool = FunctionTool(
-        name="generate_question_embedding",
-        description="Generate an embedding vector for a question",
-        function=generate_question_embedding_tool
-    )
-    
-    store_tool = FunctionTool(
-        name="store_qa_pair",
-        description="Store a new question-answer pair in the database",
-        function=store_qa_pair_tool
-    )
-    
-    generate_tool = FunctionTool(
-        name="generate_answer",
-        description="Generate an answer for a question based on user profile data",
-        function=generate_answer_tool
-    )
-    
-    # Create the agent
-    qna_agent = AgentBuilder.create()
-    
-    # Add tools
-    qna_agent.with_tools([
-        search_tool,
-        embedding_tool,
-        store_tool,
-        generate_tool,
-    ])
-    
-    # Configure LLM
-    qna_agent.with_llm(VertexAiLlm(model_name=GEMINI_MODEL))
-    
-    # Set system prompt
-    qna_agent.with_system_prompt("""
+    # System prompt
+    system_prompt = """
     You are a Q&A Manager Agent, specialized in managing question-answer pairs for job applications.
     Your responsibilities include:
     
@@ -310,7 +280,11 @@ def get_qna_agent() -> Agent:
     Always prioritize finding exact or close matches in the existing Q&A history, 
     as these represent answers the user has already approved. Only generate new answers
     when no suitable match is found.
-    """)
+    """
     
-    # Build and return the agent
-    return qna_agent.build() 
+    # Create and return the agent
+    return LlmAgent(
+        llm=Gemini(model_name=GEMINI_MODEL),
+        system_prompt=system_prompt,
+        tools=[search_tool, embedding_tool, store_tool, generate_tool]
+    ) 
