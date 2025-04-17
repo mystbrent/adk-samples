@@ -10,6 +10,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from uuid import UUID
+from fastapi.responses import JSONResponse
 
 # Import local modules
 from src.database.session import get_db
@@ -25,6 +26,8 @@ from src.schemas.user import (
     UserProfileCreate,
     UserProfileUpdate,
     UserProfileResponse,
+    UserCreate,
+    QAPairCreate,
 )
 from src.services.user_service import UserService
 from src.services.autofill_service import AutofillService
@@ -296,4 +299,36 @@ async def save_qa_pair(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
             detail={"status": "error", "message": "Failed to save Q&A pair", "details": str(e)}
+        )
+
+@router.post("/qa-pairs/", status_code=status.HTTP_201_CREATED)
+def create_qa_pair(qa_pair: QAPairCreate) -> Dict[str, Any]:
+    """Create a new QA pair."""
+    try:
+        return service.create_qa_pair(qa_pair)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create QA pair: {str(e)}"
+        )
+
+@router.get("/users/{user_id}/qa-pairs/", status_code=status.HTTP_200_OK)
+def get_user_qa_pairs(user_id: UUID) -> List[Dict[str, Any]]:
+    """Get all QA pairs for a user."""
+    try:
+        return service.get_user_qa_pairs(user_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve QA pairs: {str(e)}"
         ) 

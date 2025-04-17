@@ -71,10 +71,9 @@ Example of an error response:
 ```json
 {
   "status": "error",
-  "code": 400,
   "message": "User profile not found or incomplete",
   "details": "Ensure the user has completed their profile setup before using autofill",
-  "requestId": "req-123456"
+  "requestId": "7f8d3e2c-9a6b-4c5d-8e7f-1a2b3c4d5e6f"
 }
 ```
 
@@ -122,15 +121,16 @@ The API implementation must adhere to these validation requirements:
     "first_name": "John",
     "last_name": "Doe",
     "email": "john.doe@example.com",
-    "resume_url": "https://example.com/resume.pdf",
     "github_username": "johndoe",
     "linkedin_url": "https://linkedin.com/in/johndoe"
   }
   ```
-- **Response (200 OK)**: 
+  > **Note**: `first_name`, `last_name`, and `email` are required fields.
+  
+- **Response (201 Created)**: 
   ```json
   {
-    "id": "123e4567-e89b-12d3-a456-426614174000",
+    "id": "7f8d3e2c-9a6b-4c5d-8e7f-1a2b3c4d5e6f",
     "first_name": "John",
     "last_name": "Doe",
     "email": "john.doe@example.com",
@@ -148,12 +148,11 @@ The API implementation must adhere to these validation requirements:
 - **Response (200 OK)**: 
   ```json
   {
-    "id": "123e4567-e89b-12d3-a456-426614174000",
+    "id": "7f8d3e2c-9a6b-4c5d-8e7f-1a2b3c4d5e6f",
     "first_name": "John",
     "last_name": "Doe",
     "email": "john.doe@example.com",
     "phone": "555-123-4567",
-    "resume_url": "https://example.com/resume.pdf",
     "github_username": "johndoe",
     "linkedin_url": "https://linkedin.com/in/johndoe",
     "created_at": "2023-06-01T12:00:00Z",
@@ -166,8 +165,16 @@ The API implementation must adhere to these validation requirements:
 #### Update User Profile
 - **URL**: `/api/users/{user_id}`
 - **Method**: `PUT`
-- **Request Body**: Updated profile data
-- **Response (200 OK)**: Updated user profile
+- **Request Body**: 
+  ```json
+  {
+    "first_name": "John",
+    "last_name": "Doe",
+    "phone": "555-987-6543",
+    "github_username": "johndoe-updated"
+  }
+  ```
+- **Response (200 OK)**: Updated user profile (same format as Get User Profile)
 - **Error Responses**:
   - 400 Bad Request: Invalid field format
   - 404 Not Found: User ID doesn't exist
@@ -180,7 +187,7 @@ The API implementation must adhere to these validation requirements:
 - **Request Body**: 
   ```json
   {
-    "user_id": "123e4567-e89b-12d3-a456-426614174000",
+    "user_id": "7f8d3e2c-9a6b-4c5d-8e7f-1a2b3c4d5e6f",
     "context": {
       "company_name": "Acme Inc",
       "job_title": "Software Engineer",
@@ -190,6 +197,8 @@ The API implementation must adhere to these validation requirements:
     }
   }
   ```
+  > **Note**: `user_id` must be a valid UUID string.
+  
 - **Response (200 OK)**: 
   ```json
   {
@@ -214,7 +223,7 @@ The API implementation must adhere to these validation requirements:
   }
   ```
 - **Error Responses**:
-  - 400 Bad Request: Invalid user_id or missing required fields
+  - 400 Bad Request: Invalid user_id format or missing required fields
   - 404 Not Found: User profile not found
   - 422 Unprocessable Entity: Profile data incomplete for required fields
   - 500 Internal Server Error: Error generating autofill data
@@ -225,7 +234,7 @@ The API implementation must adhere to these validation requirements:
 - **Request Body**: 
   ```json
   {
-    "user_id": "123e4567-e89b-12d3-a456-426614174000",
+    "user_id": "7f8d3e2c-9a6b-4c5d-8e7f-1a2b3c4d5e6f",
     "field_label": "Why do you want to work for our company?",
     "field_type": "textarea",
     "surrounding_text": "Tell us more about yourself",
@@ -235,6 +244,8 @@ The API implementation must adhere to these validation requirements:
     }
   }
   ```
+  > **Note**: `user_id` and `field_label` are required fields.
+  
 - **Response (200 OK)**: 
   ```json
   {
@@ -248,7 +259,7 @@ The API implementation must adhere to these validation requirements:
   }
   ```
 - **Error Responses**:
-  - 400 Bad Request: Missing required fields
+  - 400 Bad Request: Missing required fields or invalid format
   - 404 Not Found: User not found
   - 500 Internal Server Error: Failed to generate suggestion
 
@@ -258,7 +269,7 @@ The API implementation must adhere to these validation requirements:
 - **Request Body**: 
   ```json
   {
-    "user_id": "123e4567-e89b-12d3-a456-426614174000",
+    "user_id": "7f8d3e2c-9a6b-4c5d-8e7f-1a2b3c4d5e6f",
     "question": "Why do you want to work for our company?",
     "answer": "I'm passionate about the innovative work Acme Inc is doing in the field of artificial intelligence, particularly your recent advances in natural language processing. My background in computational linguistics and machine learning makes this an exciting opportunity where I can both contribute and grow professionally.",
     "context": {
@@ -267,16 +278,18 @@ The API implementation must adhere to these validation requirements:
     }
   }
   ```
-- **Response (200 OK)**: 
+  > **Note**: `user_id`, `question`, and `answer` are required fields and cannot be empty.
+  
+- **Response (201 Created)**: 
   ```json
   {
     "status": "success",
     "message": "Q&A pair saved successfully",
-    "qa_id": "5432abcd-e89b-12d3-a456-426614174000"
+    "qa_id": "5f8a3e2c-7b6d-4c5e-9f7a-8b2c3d4e5f6a"
   }
   ```
 - **Error Responses**:
-  - 400 Bad Request: Missing required fields
+  - 400 Bad Request: Missing required fields or empty strings provided
   - 404 Not Found: User not found
   - 500 Internal Server Error: Failed to save Q&A pair
 
@@ -293,6 +306,8 @@ The API implementation must adhere to these validation requirements:
     "expires_at": "2023-06-01T13:00:00Z"
   }
   ```
+  > **Note**: Replace `{user_id}` with a valid UUID string.
+  
 - **Error Responses**:
   - 400 Bad Request: Invalid user ID format
   - 404 Not Found: User not found
@@ -304,7 +319,7 @@ The API implementation must adhere to these validation requirements:
 - **Request Body**: 
   ```json
   {
-    "user_id": "123e4567-e89b-12d3-a456-426614174000",
+    "user_id": "7f8d3e2c-9a6b-4c5d-8e7f-1a2b3c4d5e6f",
     "session_id": "session-123456",
     "message": "Suggest an answer for 'Describe a challenging project you've worked on'"
   }
@@ -368,7 +383,7 @@ The ADK (Agent Development Kit) session system is used to maintain context and s
 
 1. Chrome extension creates a session:
    ```
-   POST /adk/sessions/123e4567-e89b-12d3-a456-426614174000
+   POST /adk/sessions/7f8d3e2c-9a6b-4c5d-8e7f-1a2b3c4d5e6f
    Response: { "session_id": "session-123456" }
    ```
 
@@ -376,8 +391,8 @@ The ADK (Agent Development Kit) session system is used to maintain context and s
    ```
    POST /api/autofill/
    {
-     "user_id": "123e4567-e89b-12d3-a456-426614174000",
-     "context": { "company_name": "Acme Inc", ... }
+     "user_id": "7f8d3e2c-9a6b-4c5d-8e7f-1a2b3c4d5e6f",
+     "context": { "company_name": "Acme Inc", "job_title": "Software Engineer" }
    }
    ```
 
@@ -407,10 +422,14 @@ curl -X POST http://localhost:8000/api/users/ \
   }'
 ```
 
+This will return a user ID that you'll use in subsequent requests. Make sure to save it.
+
 #### 2. Create an ADK Session
 ```bash
-curl -X POST http://localhost:8000/adk/sessions/YOUR_USER_ID
+curl -X POST "http://localhost:8000/adk/sessions/7f8d3e2c-9a6b-4c5d-8e7f-1a2b3c4d5e6f"
 ```
+> Replace the UUID with the actual user ID returned from step 1.
+
 Save the returned `session_id` for later use.
 
 #### 3. Test the Autofill API
@@ -418,7 +437,7 @@ Save the returned `session_id` for later use.
 curl -X POST http://localhost:8000/api/autofill/ \
   -H "Content-Type: application/json" \
   -d '{
-    "user_id": "YOUR_USER_ID",
+    "user_id": "7f8d3e2c-9a6b-4c5d-8e7f-1a2b3c4d5e6f",
     "context": {
       "company_name": "Example Corp",
       "job_title": "Software Developer",
@@ -426,13 +445,14 @@ curl -X POST http://localhost:8000/api/autofill/ \
     }
   }'
 ```
+> Replace the UUID with the actual user ID returned from step 1.
 
 #### 4. Test Unidentified Field Handling
 ```bash
 curl -X POST http://localhost:8000/api/unidentified-fields/suggest/ \
   -H "Content-Type: application/json" \
   -d '{
-    "user_id": "YOUR_USER_ID",
+    "user_id": "7f8d3e2c-9a6b-4c5d-8e7f-1a2b3c4d5e6f",
     "field_label": "What makes you a good fit for this role?",
     "context": {
       "company": "Example Corp",
@@ -440,21 +460,23 @@ curl -X POST http://localhost:8000/api/unidentified-fields/suggest/ \
     }
   }'
 ```
+> Replace the UUID with the actual user ID returned from step 1.
 
 #### 5. Save a Q&A Pair
 ```bash
 curl -X POST http://localhost:8000/api/qa/save/ \
   -H "Content-Type: application/json" \
   -d '{
-    "user_id": "YOUR_USER_ID",
+    "user_id": "7f8d3e2c-9a6b-4c5d-8e7f-1a2b3c4d5e6f",
     "question": "What makes you a good fit for this role?",
-    "answer": "My experience with similar technologies and collaborative approach...",
+    "answer": "My experience with similar technologies and collaborative approach make me well-suited for this position.",
     "context": {
       "company": "Example Corp",
       "job_title": "Software Developer"
     }
   }'
 ```
+> Replace the UUID with the actual user ID returned from step 1.
 
 ## Common Integration Scenarios
 
@@ -488,8 +510,9 @@ If your API calls are returning empty strings instead of proper data, check the 
 
 1. **User Profile Completeness**: Ensure the user has completed their profile with all required data.
    ```bash
-   curl -X GET http://localhost:8000/api/users/YOUR_USER_ID
+   curl -X GET http://localhost:8000/api/users/7f8d3e2c-9a6b-4c5d-8e7f-1a2b3c4d5e6f
    ```
+   > Replace the UUID with the actual user ID.
 
 2. **Database Connectivity**: Verify that the database connection is functioning correctly.
 
@@ -498,6 +521,26 @@ If your API calls are returning empty strings instead of proper data, check the 
 4. **Server Logs**: Examine server logs for any errors or warnings during data retrieval.
 
 5. **Default Values**: The implementation should use sensible defaults or null values (not empty strings) when data is unavailable.
+
+### Common Errors and Solutions
+
+1. **Invalid UUID Format**: Make sure all UUIDs are in the correct format (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`).
+   ```
+   "Invalid UUID format: Must be a valid UUID string"
+   ```
+   **Solution**: Use a proper UUID format or generate a new user and use the returned ID.
+
+2. **Missing Required Fields**: Ensure all required fields are included in your requests.
+   ```
+   "field required: Question cannot be empty"
+   ```
+   **Solution**: Include all required fields with non-empty values.
+
+3. **User Not Found**: Verify that the user ID exists in the database.
+   ```
+   "User not found"
+   ```
+   **Solution**: Create a new user or use an existing valid user ID.
 
 ### Error Code Reference
 - **400**: Request format is invalid or missing required parameters
