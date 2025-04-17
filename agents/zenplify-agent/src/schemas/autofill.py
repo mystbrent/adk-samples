@@ -200,4 +200,17 @@ class SaveQAPairResponse(BaseModel):
     """Response model for saving a new Q&A pair."""
     status: str
     message: str
-    qa_id: Optional[UUID] = None 
+    qa_id: Optional[UUID] = None
+
+class DirectLLMRequest(BaseModel):
+    """Request model for LLM-based direct answer generation."""
+    user_id: UUID
+    question: str  # The question to be answered
+    context: Optional[Dict[str, Any]] = None  # Additional context like company name, job title
+    
+    @validator('question')
+    def question_not_empty(cls, v):
+        """Validate that question is not empty."""
+        if not v:
+            raise ValueError("Question cannot be empty")
+        return v 

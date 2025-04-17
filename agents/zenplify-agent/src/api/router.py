@@ -23,6 +23,7 @@ from src.schemas.autofill import (
     SaveQAPairRequest,
     SaveQAPairResponse,
     ZenplifyUserData,
+    DirectLLMRequest
 )
 from src.schemas.user import (
     UserProfileCreate,
@@ -36,6 +37,7 @@ from src.api.schemas import (
 from src.services.user_service import UserService
 from src.services.autofill_service import AutofillService
 from src.services.qa_service import QAService
+from src.services.llm_service import LLMService
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -476,4 +478,87 @@ def get_user_qa_pairs(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"status": "error", "message": f"Failed to retrieve QA pairs: {str(e)}", "requestId": str(uuid.uuid4())}
+        )
+
+@router.post("/unidentified-fields/direct-suggest/", response_model=UnidentifiedFieldSuggestion)
+async def direct_llm_suggestion(
+    request: DirectLLMRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Generate a direct LLM-based answer for a question.
+    
+    This endpoint completely relies on LLM to generate a response and doesn't
+    attempt to find existing answers. Used for new questions where the user
+    has context that can be used in generating a unique answer.
+    """
+    try:
+        # Validate user exists
+        user_service = UserService(db)
+        user = user_service.get_user_by_id(request.user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail={"status": "error", "message": "User not found", "requestId": str(uuid.uuid4())}
+            )
+        
+        # Convert user to dict for LLM context
+        user_dict = {
+            "name": f"{user.first_name} {user.last_name}",
+            "email": user.email,
+            "headline": user.headline,
+            "skills": [skill.skill_name for skill in user.skills] if user.skills else [],
+            "experiences": [
+                {
+                    "role": exp.role,
+                    "company": exp.company_name,
+                    "current": exp.is_current,
+                    "duration": f"{exp.start_year} - {exp.end_year or 'Present'}"
+                } 
+                for exp in user.work_experiences
+            ] if user.work_experiences else [],
+            "education": [
+                {
+                    "degree": edu.degree,
+                    "field": edu.field_of_study,
+                    "institution": edu.institution_name,
+                    "year": edu.graduation_year
+                }
+                for edu in user.educations
+            ] if user.educations else []
+        }
+        
+        # Initialize LLM service and generate response
+        llm_service = LLMService()
+        llm_response = await llm_service.generate_contextual_response(
+            user_id=request.user_id,
+            question=request.question,
+            context=request.context,
+            user_profile=user_dict
+        )
+        
+        # Convert to response model
+        suggestion = UnidentifiedFieldSuggestion(
+            suggestion=llm_response.get("suggestion"),
+            confidence=llm_response.get("confidence", 0.8),
+            source=llm_response.get("source", "llm_generation"),
+            alternative_suggestions=llm_response.get("alternative_suggestions")
+        )
+        
+        return suggestion
+        
+    except HTTPException:
+        raise
+    except ValueError as e:
+        logger.error(f"Validation error in direct LLM suggestion: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail={"status": "error", "message": str(e), "requestId": str(uuid.uuid4())}
+        )
+    except Exception as e:
+        # Log the error
+        logger.error(f"Error generating direct LLM suggestion: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail={"status": "error", "message": "Failed to generate suggestion", "details": str(e)}
         ) 
