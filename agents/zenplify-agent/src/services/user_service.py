@@ -21,8 +21,9 @@ from src.schemas.user import (
     EducationBase,
     UserSkillBase,
 )
-from ..api.schemas import User, UserCreate
-from ..database import users_collection
+from ..api.schemas import User as ApiUser, UserCreate
+# Remove the MongoDB import since it's not available
+# from ..database import users_collection
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -285,83 +286,25 @@ class UserService:
         # Add new ones
         self._add_skills(user_id, skills)
 
+    # Comment out MongoDB functions since they're not compatible with current database setup
+    """
     @staticmethod
-    async def create_user(user_data: UserCreate) -> User:
-        """Create a new user"""
-        # Check if user with the same email already exists
-        existing_user = await users_collection.find_one({"email": user_data.email})
-        if existing_user:
-            raise ValueError(f"User with email {user_data.email} already exists")
-        
-        # Create user
-        user_id = uuid.uuid4()
-        user = {
-            "id": str(user_id),
-            "firstName": user_data.firstName,
-            "lastName": user_data.lastName,
-            "email": user_data.email,
-            "githubUsername": user_data.githubUsername,
-            "linkedinUrl": user_data.linkedinUrl,
-            "created_at": datetime.utcnow()
-        }
-        
-        await users_collection.insert_one(user)
-        
-        return User(
-            id=user_id,
-            firstName=user_data.firstName,
-            lastName=user_data.lastName,
-            email=user_data.email,
-            githubUsername=user_data.githubUsername,
-            linkedinUrl=user_data.linkedinUrl
-        )
+    async def create_user(user_data: UserCreate) -> ApiUser:
+        # MongoDB implementation removed
+        pass
     
     @staticmethod
-    async def get_user_by_id(user_id: str) -> Optional[User]:
-        """Get a user by ID"""
-        user = await users_collection.find_one({"id": user_id})
-        if not user:
-            return None
-        
-        return User(
-            id=uuid.UUID(user["id"]),
-            firstName=user["firstName"],
-            lastName=user["lastName"],
-            email=user["email"],
-            githubUsername=user.get("githubUsername"),
-            linkedinUrl=user.get("linkedinUrl")
-        )
+    async def get_user_by_id(user_id: str) -> Optional[ApiUser]:
+        # MongoDB implementation removed
+        pass
     
     @staticmethod
-    async def get_user_by_email(email: str) -> Optional[User]:
-        """Get a user by email"""
-        user = await users_collection.find_one({"email": email})
-        if not user:
-            return None
-        
-        return User(
-            id=uuid.UUID(user["id"]),
-            firstName=user["firstName"],
-            lastName=user["lastName"],
-            email=user["email"],
-            githubUsername=user.get("githubUsername"),
-            linkedinUrl=user.get("linkedinUrl")
-        )
+    async def get_user_by_email(email: str) -> Optional[ApiUser]:
+        # MongoDB implementation removed
+        pass
     
     @staticmethod
-    async def get_all_users() -> List[User]:
-        """Get all users"""
-        users_cursor = users_collection.find()
-        users = []
-        
-        async for user in users_cursor:
-            users.append(User(
-                id=uuid.UUID(user["id"]),
-                firstName=user["firstName"],
-                lastName=user["lastName"],
-                email=user["email"],
-                githubUsername=user.get("githubUsername"),
-                linkedinUrl=user.get("linkedinUrl")
-            ))
-        
-        return users 
+    async def get_all_users() -> List[ApiUser]:
+        # MongoDB implementation removed
+        pass
+    """ 

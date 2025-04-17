@@ -6,8 +6,9 @@ This module defines FastAPI endpoints for interaction with the Zenplify Chrome e
 
 import uuid
 import logging
+import json
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from uuid import UUID
 from fastapi.responses import JSONResponse
@@ -21,11 +22,14 @@ from src.schemas.autofill import (
     UnidentifiedFieldSuggestion,
     SaveQAPairRequest,
     SaveQAPairResponse,
+    ZenplifyUserData,
 )
 from src.schemas.user import (
     UserProfileCreate,
     UserProfileUpdate,
     UserProfileResponse,
+)
+from src.api.schemas import (
     UserCreate,
     QAPairCreate,
 )
@@ -157,18 +161,53 @@ async def get_autofill_data(
                 }
             )
         
-        # Ensure firstName, lastName, email are present
+        # Get user data and create a validated ZenplifyUserData object
         user_data = autofill_data.get("user_data", {})
-        if not user_data.get("firstName") or not user_data.get("lastName") or not user_data.get("email"):
-            # Fill in defaults if missing
-            if not user_data.get("firstName"):
-                user_data["firstName"] = "John"
-            if not user_data.get("lastName"):
-                user_data["lastName"] = "Doe"
-            if not user_data.get("email"):
-                user_data["email"] = "user@example.com"
         
-        return autofill_data
+        # Ensure required fields are present and non-empty
+        # Use default values if missing or empty
+        if not user_data.get("firstName") or user_data.get("firstName") == "":
+            user_data["firstName"] = "John"
+            
+        if not user_data.get("lastName") or user_data.get("lastName") == "":
+            user_data["lastName"] = "Doe"
+            
+        if not user_data.get("email") or user_data.get("email") == "":
+            user_data["email"] = "user@example.com"
+        
+        # Convert empty strings to None for optional fields
+        for key, value in user_data.items():
+            if key not in ["firstName", "lastName", "email"] and value == "":
+                user_data[key] = None
+        
+        # Create a validated ZenplifyUserData object
+        validated_user_data = ZenplifyUserData(
+            firstName=user_data["firstName"],
+            lastName=user_data["lastName"],
+            email=user_data["email"],
+            phone=user_data.get("phone"),
+            address=user_data.get("address"),
+            city=user_data.get("city"),
+            state=user_data.get("state"),
+            zip=user_data.get("zip"),
+            country=user_data.get("country"),
+            education=user_data.get("education"),
+            experience=user_data.get("experience"),
+            skills=user_data.get("skills"),
+            resume=user_data.get("resume"),
+            coverLetter=user_data.get("coverLetter"),
+            linkedin=user_data.get("linkedin"),
+            github=user_data.get("github"),
+            portfolio=user_data.get("portfolio"),
+            website=user_data.get("website"),
+            company=user_data.get("company"),
+            gender=user_data.get("gender"),
+            dateOfBirth=user_data.get("dateOfBirth"),
+            currentJob=user_data.get("currentJob")
+        )
+        
+        # Return AutofillResponse with validated user data
+        return AutofillResponse(user_data=validated_user_data)
         
     except HTTPException:
         raise
@@ -216,7 +255,7 @@ async def suggest_for_unidentified_field(
         )
         
         # Validate that suggestion is not empty
-        if not suggestion or not suggestion.suggestion:
+        if not suggestion or not suggestion.get("suggestion"):
             # Provide a generic suggestion if none available
             suggestion = UnidentifiedFieldSuggestion(
                 suggestion="I would be a good fit for this position because of my relevant experience and skills.",
@@ -226,6 +265,14 @@ async def suggest_for_unidentified_field(
                     "My background in this field has prepared me well for this role.",
                     "I have the necessary qualifications and am enthusiastic about this opportunity."
                 ]
+            )
+        else:
+            # Convert the dict to UnidentifiedFieldSuggestion object
+            suggestion = UnidentifiedFieldSuggestion(
+                suggestion=suggestion.get("suggestion"),
+                confidence=suggestion.get("confidence", 0.5),
+                source=suggestion.get("source", "generated"),
+                alternative_suggestions=suggestion.get("alternative_suggestions")
             )
         
         return suggestion
@@ -302,33 +349,131 @@ async def save_qa_pair(
         )
 
 @router.post("/qa-pairs/", status_code=status.HTTP_201_CREATED)
-def create_qa_pair(qa_pair: QAPairCreate) -> Dict[str, Any]:
+def create_qa_pair(qa_pair: QAPairCreate, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """Create a new QA pair."""
+    qa_service = QAService(db)
     try:
-        return service.create_qa_pair(qa_pair)
+        # Validate user exists
+        user_service = UserService(db)
+        user = user_service.get_user_by_id(qa_pair.userId)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"status": "error", "message": "User not found", "requestId": str(uuid.uuid4())}
+            )
+        
+        # Validate question and answer are not empty
+        if not qa_pair.question or not qa_pair.question.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"status": "error", "message": "Question cannot be empty", "requestId": str(uuid.uuid4())}
+            )
+            
+        if not qa_pair.answer or not qa_pair.answer.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"status": "error", "message": "Answer cannot be empty", "requestId": str(uuid.uuid4())}
+            )
+        
+        # Parse context properly
+        context_dict = None
+        if qa_pair.context:
+            try:
+                if isinstance(qa_pair.context, str) and qa_pair.context.strip():
+                    # If it's a JSON string, try to parse it
+                    if qa_pair.context[0] in ['{', '[']:
+                        context_dict = json.loads(qa_pair.context)
+                    else:
+                        # Just a plain string, use as context
+                        context_dict = {"context": qa_pair.context}
+                elif isinstance(qa_pair.context, dict):
+                    context_dict = qa_pair.context
+            except json.JSONDecodeError:
+                # If not valid JSON, use as plain text
+                context_dict = {"context": qa_pair.context}
+        
+        # Create QA pair
+        qa_data = qa_service.save_qa_pair(
+            user_id=qa_pair.userId,
+            question=qa_pair.question,
+            answer=qa_pair.answer,
+            context=context_dict
+        )
+        
+        # Return in the format expected by the API Guide
+        return {
+            "status": "success",
+            "message": "Q&A pair saved successfully",
+            "qa_id": qa_data.get("id")
+        }
+        
     except ValueError as e:
+        logger.error(f"Validation error creating QA pair: {e}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"status": "error", "message": str(e), "requestId": str(uuid.uuid4())}
         )
     except Exception as e:
+        logger.error(f"Error creating QA pair: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create QA pair: {str(e)}"
+            detail={"status": "error", "message": f"Failed to create QA pair: {str(e)}", "requestId": str(uuid.uuid4())}
         )
 
 @router.get("/users/{user_id}/qa-pairs/", status_code=status.HTTP_200_OK)
-def get_user_qa_pairs(user_id: UUID) -> List[Dict[str, Any]]:
-    """Get all QA pairs for a user."""
+def get_user_qa_pairs(
+    user_id: UUID, 
+    question: Optional[str] = Query(None, description="Optional filter for similar questions"),
+    min_similarity: float = Query(0.0, ge=0.0, le=1.0, description="Minimum similarity score for matching questions"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of results to return"),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """Get QA pairs for a user with optional similarity search."""
+    qa_service = QAService(db)
     try:
-        return service.get_user_qa_pairs(user_id)
+        # Validate user exists
+        user_service = UserService(db)
+        user = user_service.get_user_by_id(user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"status": "error", "message": "User not found", "requestId": str(uuid.uuid4())}
+            )
+        
+        # Get QA pairs from database
+        if question:
+            # If a question is provided, perform similarity search
+            qa_pairs_result = qa_service.find_similar_questions(
+                user_id=user_id, 
+                question=question, 
+                min_similarity=min_similarity, 
+                limit=limit
+            )
+        else:
+            # Otherwise get all QA pairs for the user (with a reasonable limit)
+            qa_pairs_result = qa_service.find_similar_questions(
+                user_id=user_id, 
+                question="", 
+                min_similarity=0, 
+                limit=limit
+            )
+        
+        # Format response according to API Guide
+        return {
+            "status": "success",
+            "data": qa_pairs_result,
+            "count": len(qa_pairs_result)
+        }
+        
     except ValueError as e:
+        logger.error(f"Validation error retrieving QA pairs: {e}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"status": "error", "message": str(e), "requestId": str(uuid.uuid4())}
         )
     except Exception as e:
+        logger.error(f"Error retrieving QA pairs: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve QA pairs: {str(e)}"
+            detail={"status": "error", "message": f"Failed to retrieve QA pairs: {str(e)}", "requestId": str(uuid.uuid4())}
         ) 

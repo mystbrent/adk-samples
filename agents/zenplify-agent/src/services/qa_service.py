@@ -18,7 +18,8 @@ from src.database.models import User, QAHistory
 from src.services.user_service import UserService
 from src.services.embedding_service import EmbeddingService
 from ..api.schemas import QAPair, QAPairCreate
-from ..database import qa_pairs_collection, users_collection
+# Remove the MongoDB imports since they're not available
+# from ..database import qa_pairs_collection, users_collection
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -319,54 +320,15 @@ class QAService:
         # Generic fallback response
         return "I would be happy to discuss this further in an interview."
 
+    # Comment out MongoDB functions since they're not compatible with current database setup
+    """
     @staticmethod
     async def create_qa_pair(qa_pair_data: QAPairCreate) -> QAPair:
-        """Create a new QA pair for a user"""
-        # Verify user exists
-        user = await users_collection.find_one({"id": str(qa_pair_data.userId)})
-        if not user:
-            raise ValueError(f"User with ID {qa_pair_data.userId} not found")
-        
-        # Create QA pair
-        qa_pair_id = uuid.uuid4()
-        qa_pair = {
-            "id": str(qa_pair_id),
-            "userId": str(qa_pair_data.userId),
-            "question": qa_pair_data.question,
-            "answer": qa_pair_data.answer,
-            "context": qa_pair_data.context,
-            "created_at": datetime.utcnow()
-        }
-        
-        await qa_pairs_collection.insert_one(qa_pair)
-        
-        return QAPair(
-            id=qa_pair_id,
-            userId=qa_pair_data.userId,
-            question=qa_pair_data.question,
-            answer=qa_pair_data.answer,
-            context=qa_pair_data.context
-        )
+        # MongoDB implementation removed
+        pass
     
     @staticmethod
     async def get_qa_pairs_by_user(user_id: str) -> List[QAPair]:
-        """Get all QA pairs for a specific user"""
-        # Verify user exists
-        user = await users_collection.find_one({"id": user_id})
-        if not user:
-            raise ValueError(f"User with ID {user_id} not found")
-        
-        # Get QA pairs
-        qa_pairs_cursor = qa_pairs_collection.find({"userId": user_id})
-        qa_pairs = []
-        
-        async for qa_pair in qa_pairs_cursor:
-            qa_pairs.append(QAPair(
-                id=uuid.UUID(qa_pair["id"]),
-                userId=uuid.UUID(qa_pair["userId"]),
-                question=qa_pair["question"],
-                answer=qa_pair["answer"],
-                context=qa_pair.get("context")
-            ))
-        
-        return qa_pairs 
+        # MongoDB implementation removed
+        pass
+    """ 
