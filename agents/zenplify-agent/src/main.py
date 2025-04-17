@@ -89,12 +89,11 @@ async def run_agent(user_id: str, session_id: str, message: str):
     return {"events": events}
 
 @app.post("/adk/sessions/{user_id}")
-async def create_session(user_id: str, session_id: str = None):
+async def create_session(user_id: str):
     """Create a new session for the user."""
     session = session_service.create_session(
         app_name="zenplify-agent",
         user_id=user_id,
-        session_id=session_id
     )
     return {"session_id": session.session_id}
 
