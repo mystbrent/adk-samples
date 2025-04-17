@@ -6,9 +6,11 @@ This document explains how to use and test the Zenplify-Agent APIs for integrati
 
 1. [Overview](#overview)
 2. [API Endpoints](#api-endpoints)
-3. [ADK Sessions and API Integration](#adk-sessions-and-api-integration)
-4. [How to Test APIs](#how-to-test-apis)
-5. [Common Integration Scenarios](#common-integration-scenarios)
+3. [Response Standards](#response-standards)
+4. [ADK Sessions and API Integration](#adk-sessions-and-api-integration)
+5. [How to Test APIs](#how-to-test-apis)
+6. [Common Integration Scenarios](#common-integration-scenarios)
+7. [Troubleshooting](#troubleshooting)
 
 ## Overview
 
@@ -20,6 +22,92 @@ The Zenplify-Agent provides several REST API endpoints to support its Chrome ext
 - Saving Q&A pairs for future use
 
 The backend is built using FastAPI and integrates with Google's Agent Development Kit (ADK) to power intelligent field suggestions and form filling.
+
+## Response Standards
+
+All API endpoints in the Zenplify-Agent follow these standard response guidelines:
+
+### Success Responses (200 OK)
+
+A successful API response will:
+- Return HTTP status code 200
+- Contain a properly formatted JSON body with required fields
+- Never return empty strings for required fields
+- Use null values (not empty strings) for optional fields that don't have data
+- Include all fields specified in the response schema, even if null
+
+Example of a proper 200 OK response:
+```json
+{
+  "user_data": {
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "john.doe@example.com",
+    "phone": "555-123-4567",
+    "address": "123 Main St",
+    "city": "Anytown",
+    "state": "CA",
+    "zip": "12345",
+    "country": "USA",
+    "education": "Bachelor's in Computer Science from Stanford University",
+    "experience": "Senior Developer at TechCorp, Software Engineer at StartupXYZ",
+    "skills": "Python, JavaScript, React, Machine Learning",
+    "linkedin": "https://linkedin.com/in/johndoe",
+    "github": "https://github.com/johndoe",
+    "company": "TechCorp",
+    "currentJob": "Senior Developer"
+  }
+}
+```
+
+### Error Responses
+
+If the API cannot successfully complete the request, it will:
+- Return an appropriate HTTP status code (400, 404, 500, etc.)
+- Include a clear error message that explains the issue
+- Provide guidance on how to fix the problem when applicable
+
+Example of an error response:
+```json
+{
+  "status": "error",
+  "code": 400,
+  "message": "User profile not found or incomplete",
+  "details": "Ensure the user has completed their profile setup before using autofill",
+  "requestId": "req-123456"
+}
+```
+
+### Validation Requirements
+
+The API implementation must adhere to these validation requirements:
+
+1. **Required Fields**: The following fields must never be empty strings and must always be provided in a 200 OK response:
+   - firstName
+   - lastName
+   - email
+   
+2. **Optional Fields**: The following fields may be null but should never be empty strings:
+   - phone
+   - address
+   - city
+   - state
+   - zip
+   - country
+   - education
+   - experience
+   - skills
+   - linkedin
+   - github
+   - portfolio
+   - website
+   - company
+   - currentJob
+
+3. **Data Quality**: All returned data must:
+   - Be properly formatted (names capitalized, phone numbers in proper format)
+   - Be checked for validity before returning 
+   - Be populated from the most reliable source available (user profile takes precedence over inferred data)
 
 ## API Endpoints
 
@@ -39,7 +127,7 @@ The backend is built using FastAPI and integrates with Google's Agent Developmen
     "linkedin_url": "https://linkedin.com/in/johndoe"
   }
   ```
-- **Response**: 
+- **Response (200 OK)**: 
   ```json
   {
     "id": "123e4567-e89b-12d3-a456-426614174000",
@@ -49,17 +137,40 @@ The backend is built using FastAPI and integrates with Google's Agent Developmen
     "created_at": "2023-06-01T12:00:00Z"
   }
   ```
+- **Error Responses**:
+  - 400 Bad Request: Invalid or missing required fields
+  - 409 Conflict: User with email already exists
+  - 500 Internal Server Error: Server processing error
 
 #### Get User Profile
 - **URL**: `/api/users/{user_id}`
 - **Method**: `GET`
-- **Response**: User profile data
+- **Response (200 OK)**: 
+  ```json
+  {
+    "id": "123e4567-e89b-12d3-a456-426614174000",
+    "first_name": "John",
+    "last_name": "Doe",
+    "email": "john.doe@example.com",
+    "phone": "555-123-4567",
+    "resume_url": "https://example.com/resume.pdf",
+    "github_username": "johndoe",
+    "linkedin_url": "https://linkedin.com/in/johndoe",
+    "created_at": "2023-06-01T12:00:00Z",
+    "updated_at": "2023-06-02T15:30:00Z"
+  }
+  ```
+- **Error Responses**:
+  - 404 Not Found: User ID doesn't exist
 
 #### Update User Profile
 - **URL**: `/api/users/{user_id}`
 - **Method**: `PUT`
 - **Request Body**: Updated profile data
-- **Response**: Updated user profile
+- **Response (200 OK)**: Updated user profile
+- **Error Responses**:
+  - 400 Bad Request: Invalid field format
+  - 404 Not Found: User ID doesn't exist
 
 ### Autofill Endpoints
 
@@ -79,7 +190,7 @@ The backend is built using FastAPI and integrates with Google's Agent Developmen
     }
   }
   ```
-- **Response**: 
+- **Response (200 OK)**: 
   ```json
   {
     "user_data": {
@@ -102,6 +213,11 @@ The backend is built using FastAPI and integrates with Google's Agent Developmen
     }
   }
   ```
+- **Error Responses**:
+  - 400 Bad Request: Invalid user_id or missing required fields
+  - 404 Not Found: User profile not found
+  - 422 Unprocessable Entity: Profile data incomplete for required fields
+  - 500 Internal Server Error: Error generating autofill data
 
 #### Suggest for Unidentified Field
 - **URL**: `/api/unidentified-fields/suggest/`
@@ -119,15 +235,22 @@ The backend is built using FastAPI and integrates with Google's Agent Developmen
     }
   }
   ```
-- **Response**: 
+- **Response (200 OK)**: 
   ```json
   {
-    "suggestion": "I'm interested in working for Acme Inc because of its innovative approach to software development and strong focus on user experience...",
+    "suggestion": "I'm interested in working for Acme Inc because of its innovative approach to software development and strong focus on user experience. The company's commitment to technological advancement aligns perfectly with my passion for building cutting-edge solutions that solve real-world problems.",
     "confidence": 0.85,
     "source": "qa_history",
-    "alternative_suggestions": ["I've always admired Acme Inc's commitment to...", "Acme Inc's work on AI systems is particularly exciting..."]
+    "alternative_suggestions": [
+      "I've always admired Acme Inc's commitment to innovation and excellence in the software industry. Your recent work on AI-driven solutions particularly resonates with my background and interests.",
+      "Acme Inc's work on AI systems is particularly exciting to me, and I believe my experience with machine learning algorithms would allow me to contribute meaningfully to your team."
+    ]
   }
   ```
+- **Error Responses**:
+  - 400 Bad Request: Missing required fields
+  - 404 Not Found: User not found
+  - 500 Internal Server Error: Failed to generate suggestion
 
 #### Save Q&A Pair
 - **URL**: `/api/qa/save/`
@@ -137,32 +260,43 @@ The backend is built using FastAPI and integrates with Google's Agent Developmen
   {
     "user_id": "123e4567-e89b-12d3-a456-426614174000",
     "question": "Why do you want to work for our company?",
-    "answer": "I'm passionate about the innovative work Acme Inc is doing...",
+    "answer": "I'm passionate about the innovative work Acme Inc is doing in the field of artificial intelligence, particularly your recent advances in natural language processing. My background in computational linguistics and machine learning makes this an exciting opportunity where I can both contribute and grow professionally.",
     "context": {
       "company": "Acme Inc",
       "job_title": "Software Engineer"
     }
   }
   ```
-- **Response**: 
+- **Response (200 OK)**: 
   ```json
   {
     "status": "success",
-    "message": "Q&A pair saved successfully"
+    "message": "Q&A pair saved successfully",
+    "qa_id": "5432abcd-e89b-12d3-a456-426614174000"
   }
   ```
+- **Error Responses**:
+  - 400 Bad Request: Missing required fields
+  - 404 Not Found: User not found
+  - 500 Internal Server Error: Failed to save Q&A pair
 
 ### ADK Session Endpoints
 
 #### Create ADK Session
 - **URL**: `/adk/sessions/{user_id}`
 - **Method**: `POST`
-- **Response**: 
+- **Response (200 OK)**: 
   ```json
   {
-    "session_id": "session-123456"
+    "session_id": "session-123456",
+    "created_at": "2023-06-01T12:00:00Z",
+    "expires_at": "2023-06-01T13:00:00Z"
   }
   ```
+- **Error Responses**:
+  - 400 Bad Request: Invalid user ID format
+  - 404 Not Found: User not found
+  - 500 Internal Server Error: Error creating session
 
 #### Run ADK Agent
 - **URL**: `/adk/run`
@@ -175,7 +309,29 @@ The backend is built using FastAPI and integrates with Google's Agent Developmen
     "message": "Suggest an answer for 'Describe a challenging project you've worked on'"
   }
   ```
-- **Response**: Array of ADK events
+- **Response (200 OK)**: 
+  ```json
+  {
+    "events": [
+      {
+        "type": "thinking",
+        "content": "Analyzing user profile and past project experiences..."
+      },
+      {
+        "type": "response",
+        "content": "During my time at TechCorp, I led the development of a real-time data processing pipeline that handled over 10 million events per day. The challenge was ensuring sub-second latency while maintaining data integrity across distributed systems. I implemented a microservice architecture using Kafka for message queuing and designed a custom throttling mechanism to handle traffic spikes. The solution reduced processing time by 60% and improved system reliability by implementing comprehensive error handling and recovery mechanisms."
+      }
+    ],
+    "suggestions": [
+      "I implemented a machine learning model to predict customer churn with 92% accuracy using Python and TensorFlow.",
+      "I developed a cross-platform mobile application using React Native that synchronized data across multiple devices in real-time."
+    ]
+  }
+  ```
+- **Error Responses**:
+  - 400 Bad Request: Missing required fields
+  - 404 Not Found: User or session not found
+  - 500 Internal Server Error: Agent execution error
 
 ## ADK Sessions and API Integration
 
@@ -323,4 +479,36 @@ curl -X POST http://localhost:8000/api/qa/save/ \
 ### Scenario 4: Context-Aware Suggestions
 1. Extension provides job context (company, role, description)
 2. Autofill and suggestion APIs use this context to tailor responses
-3. ADK session maintains this context for the duration of the application 
+3. ADK session maintains this context for the duration of the application
+
+## Troubleshooting
+
+### Empty Fields in Response
+If your API calls are returning empty strings instead of proper data, check the following:
+
+1. **User Profile Completeness**: Ensure the user has completed their profile with all required data.
+   ```bash
+   curl -X GET http://localhost:8000/api/users/YOUR_USER_ID
+   ```
+
+2. **Database Connectivity**: Verify that the database connection is functioning correctly.
+
+3. **Data Source Population**: Check if the resume parsing and GitHub data extraction have successfully populated the database.
+
+4. **Server Logs**: Examine server logs for any errors or warnings during data retrieval.
+
+5. **Default Values**: The implementation should use sensible defaults or null values (not empty strings) when data is unavailable.
+
+### Error Code Reference
+- **400**: Request format is invalid or missing required parameters
+- **404**: The requested resource (user, session, etc.) was not found
+- **409**: A conflict occurred (e.g., duplicate resource)
+- **422**: Request format is valid but content cannot be processed
+- **500**: Server-side error occurred during processing
+
+For persistent issues, provide the following when contacting support:
+- User ID
+- Exact API endpoint called
+- Request body used
+- Response received
+- Any error messages from the console 

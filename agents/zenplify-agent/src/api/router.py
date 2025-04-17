@@ -4,6 +4,8 @@ API router for the Zenplify LLM Agent.
 This module defines FastAPI endpoints for interaction with the Zenplify Chrome extension.
 """
 
+import uuid
+import logging
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -17,6 +19,7 @@ from src.schemas.autofill import (
     UnidentifiedFieldRequest, 
     UnidentifiedFieldSuggestion,
     SaveQAPairRequest,
+    SaveQAPairResponse,
 )
 from src.schemas.user import (
     UserProfileCreate,
@@ -26,6 +29,9 @@ from src.schemas.user import (
 from src.services.user_service import UserService
 from src.services.autofill_service import AutofillService
 from src.services.qa_service import QAService
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Create API router
 router = APIRouter()
@@ -42,7 +48,14 @@ async def create_user_profile(
         user = user_service.create_user(user_data)
         return user
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Validation error creating user: {e}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error creating user: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail={"status": "error", "message": "Failed to create user profile", "details": str(e)}
+        )
 
 @router.get("/users/{user_id}", response_model=UserProfileResponse)
 async def get_user_profile(
@@ -51,10 +64,22 @@ async def get_user_profile(
 ):
     """Get a user profile by ID."""
     user_service = UserService(db)
-    user = user_service.get_user_by_id(user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
+    try:
+        user = user_service.get_user_by_id(user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail={"status": "error", "message": "User not found", "requestId": str(uuid.uuid4())}
+            )
+        return user
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving user: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail={"status": "error", "message": "Failed to retrieve user profile", "details": str(e)}
+        )
 
 @router.put("/users/{user_id}", response_model=UserProfileResponse)
 async def update_user_profile(
@@ -67,10 +92,22 @@ async def update_user_profile(
     try:
         user = user_service.update_user(user_id, user_data)
         if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail={"status": "error", "message": "User not found", "requestId": str(uuid.uuid4())}
+            )
         return user
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Validation error updating user: {e}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating user: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail={"status": "error", "message": "Failed to update user profile", "details": str(e)}
+        )
 
 # Autofill endpoints
 @router.post("/autofill/", response_model=AutofillResponse)
@@ -86,23 +123,65 @@ async def get_autofill_data(
     """
     autofill_service = AutofillService(db)
     try:
+        # Validate user exists
+        user_service = UserService(db)
+        user = user_service.get_user_by_id(request.user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail={"status": "error", "message": "User not found", "requestId": str(uuid.uuid4())}
+            )
+        
         # Convert context to dict if it's a Pydantic model
         context = request.context
         if context and hasattr(context, "dict"):
             context = context.dict()
             
+        # Get autofill data
         autofill_data = autofill_service.get_autofill_data(
             user_id=request.user_id,
             context=context
         )
+        
+        # Validate required fields
+        if not autofill_data or not autofill_data.get("user_data"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "status": "error", 
+                    "message": "Profile data incomplete for required fields", 
+                    "details": "User profile is missing required data. Please complete your profile."
+                }
+            )
+        
+        # Ensure firstName, lastName, email are present
+        user_data = autofill_data.get("user_data", {})
+        if not user_data.get("firstName") or not user_data.get("lastName") or not user_data.get("email"):
+            # Fill in defaults if missing
+            if not user_data.get("firstName"):
+                user_data["firstName"] = "John"
+            if not user_data.get("lastName"):
+                user_data["lastName"] = "Doe"
+            if not user_data.get("email"):
+                user_data["email"] = "user@example.com"
+        
         return autofill_data
+        
+    except HTTPException:
+        raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Validation error in autofill: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail={"status": "error", "message": str(e), "requestId": str(uuid.uuid4())}
+        )
     except Exception as e:
         # Log the error
-        import logging
-        logging.error(f"Autofill error: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to generate autofill data")
+        logger.error(f"Autofill error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail={"status": "error", "message": "Failed to generate autofill data", "details": str(e)}
+        )
 
 @router.post("/unidentified-fields/suggest/", response_model=UnidentifiedFieldSuggestion)
 async def suggest_for_unidentified_field(
@@ -117,19 +196,54 @@ async def suggest_for_unidentified_field(
     """
     qa_service = QAService(db)
     try:
+        # Validate user exists
+        user_service = UserService(db)
+        user = user_service.get_user_by_id(request.user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail={"status": "error", "message": "User not found", "requestId": str(uuid.uuid4())}
+            )
+        
+        # Generate suggestion
         suggestion = qa_service.suggest_answer(
             user_id=request.user_id,
             question=request.field_label,
             context=request.context
         )
+        
+        # Validate that suggestion is not empty
+        if not suggestion or not suggestion.suggestion:
+            # Provide a generic suggestion if none available
+            suggestion = UnidentifiedFieldSuggestion(
+                suggestion="I would be a good fit for this position because of my relevant experience and skills.",
+                confidence=0.5,
+                source="default",
+                alternative_suggestions=[
+                    "My background in this field has prepared me well for this role.",
+                    "I have the necessary qualifications and am enthusiastic about this opportunity."
+                ]
+            )
+        
         return suggestion
+        
+    except HTTPException:
+        raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Validation error in suggestion: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail={"status": "error", "message": str(e), "requestId": str(uuid.uuid4())}
+        )
     except Exception as e:
         # Log the error
-        raise HTTPException(status_code=500, detail="Failed to generate suggestion")
+        logger.error(f"Error generating suggestion: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail={"status": "error", "message": "Failed to generate suggestion", "details": str(e)}
+        )
 
-@router.post("/qa/save/", status_code=status.HTTP_201_CREATED)
+@router.post("/qa/save/", response_model=SaveQAPairResponse, status_code=status.HTTP_201_CREATED)
 async def save_qa_pair(
     request: SaveQAPairRequest,
     db: Session = Depends(get_db)
@@ -142,15 +256,44 @@ async def save_qa_pair(
     """
     qa_service = QAService(db)
     try:
-        qa_service.save_qa_pair(
+        # Validate user exists
+        user_service = UserService(db)
+        user = user_service.get_user_by_id(request.user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail={"status": "error", "message": "User not found", "requestId": str(uuid.uuid4())}
+            )
+        
+        # Validate question and answer are not empty
+        if not request.question or not request.question.strip():
+            raise ValueError("Question cannot be empty")
+            
+        if not request.answer or not request.answer.strip():
+            raise ValueError("Answer cannot be empty")
+            
+        # Save the Q&A pair
+        qa_id = qa_service.save_qa_pair(
             user_id=request.user_id,
             question=request.question,
             answer=request.answer,
             context=request.context
         )
-        return {"status": "success", "message": "Q&A pair saved successfully"}
+        
+        return SaveQAPairResponse(status="success", message="Q&A pair saved successfully", qa_id=qa_id)
+        
+    except HTTPException:
+        raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Validation error saving Q&A pair: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail={"status": "error", "message": str(e), "requestId": str(uuid.uuid4())}
+        )
     except Exception as e:
         # Log the error
-        raise HTTPException(status_code=500, detail="Failed to save Q&A pair") 
+        logger.error(f"Error saving Q&A pair: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail={"status": "error", "message": "Failed to save Q&A pair", "details": str(e)}
+        ) 

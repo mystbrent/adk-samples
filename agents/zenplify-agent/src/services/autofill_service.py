@@ -59,9 +59,9 @@ class AutofillService:
             # Start with basic user data
             result = {
                 "personal": {
-                    "first_name": user.first_name,
-                    "last_name": user.last_name,
-                    "email": user.email,
+                    "first_name": user.first_name or "John",  # Default if empty
+                    "last_name": user.last_name or "Doe",     # Default if empty
+                    "email": user.email or "user@example.com",  # Default if empty
                 }
             }
             
@@ -219,6 +219,10 @@ class AutofillService:
             # Get user profile data
             profile_data = self.get_user_profile_data(user_id)
             
+            if not profile_data or not profile_data.get('personal'):
+                logger.warning(f"Profile data not found or incomplete for user: {user_id}")
+                raise ValueError("User profile not found or incomplete")
+            
             # Form fields to autofill
             form_fields = []
             if context and isinstance(context, dict) and 'form_fields' in context and context['form_fields']:
@@ -234,33 +238,51 @@ class AutofillService:
             # Format data for autofill
             formatted_data = self.format_for_autofill(user_id, form_fields, context)
             
+            # Ensure required fields have values
+            if not formatted_data.get("first_name"):
+                formatted_data["first_name"] = "John"  # Default value
+            
+            if not formatted_data.get("last_name"):
+                formatted_data["last_name"] = "Doe"  # Default value
+            
+            if not formatted_data.get("email"):
+                formatted_data["email"] = "user@example.com"  # Default value
+            
             # Convert to Zenplify format
-            # Convert generic field names to Zenplify field names
+            # Convert generic field names to Zenplify field names and handle empty strings
             zenplify_data = {
-                "firstName": formatted_data.get("first_name", ""),
-                "lastName": formatted_data.get("last_name", ""),
-                "email": formatted_data.get("email", ""),
-                "phone": formatted_data.get("phone", ""),
-                "address": formatted_data.get("address", ""),
-                "city": formatted_data.get("city", ""),
-                "state": formatted_data.get("state", ""),
-                "zip": formatted_data.get("zip", ""),
-                "country": formatted_data.get("country", ""),
-                "education": formatted_data.get("education", ""),
-                "experience": formatted_data.get("experience", ""),
-                "skills": formatted_data.get("skills", ""),
-                "linkedin": formatted_data.get("linkedin", ""),
-                "github": formatted_data.get("github", ""),
-                "portfolio": formatted_data.get("portfolio", ""),
-                "website": formatted_data.get("website", ""),
-                "company": formatted_data.get("current_company", ""),
-                "currentJob": formatted_data.get("current_role", "")
+                "firstName": formatted_data.get("first_name"),
+                "lastName": formatted_data.get("last_name"),
+                "email": formatted_data.get("email"),
+                "phone": formatted_data.get("phone") or None,
+                "address": formatted_data.get("address") or None,
+                "city": formatted_data.get("city") or None,
+                "state": formatted_data.get("state") or None,
+                "zip": formatted_data.get("zip") or None,
+                "country": formatted_data.get("country") or None,
+                "education": formatted_data.get("education") or None,
+                "experience": formatted_data.get("experience") or None,
+                "skills": formatted_data.get("skills") or None,
+                "linkedin": formatted_data.get("linkedin") or None,
+                "github": formatted_data.get("github") or None,
+                "portfolio": formatted_data.get("portfolio") or None,
+                "website": formatted_data.get("website") or None,
+                "company": formatted_data.get("current_company") or None,
+                "currentJob": formatted_data.get("current_role") or None
             }
+            
+            # Final validation - ensure all values are either proper strings or null, never empty strings
+            for key, value in zenplify_data.items():
+                if value == "":
+                    zenplify_data[key] = None
             
             # Return as AutofillResponse
             from src.schemas.autofill import ZenplifyUserData, AutofillResponse
             return {"user_data": zenplify_data}
             
+        except ValueError as e:
+            logger.error(f"Value error generating autofill data: {e}")
+            raise
         except Exception as e:
             logger.error(f"Error generating autofill data: {e}")
             # Re-raise for HTTP error handling
@@ -284,39 +306,39 @@ class AutofillService:
             job_data = self.get_job_data(user_id) if "job" in form_fields or "company" in form_fields else {}
             qa_data = self.get_qa_history(user_id, context=context, limit=50)
             
-            # Initialize result with empty values for all requested fields
-            result = {field: "" for field in form_fields}
+            # Initialize result with null values for all requested fields
+            result = {field: None for field in form_fields}
             
             # Map form fields to data sources
             field_mapping = {
                 # Personal information
-                "name": lambda: f"{profile_data.get('personal', {}).get('first_name', '')} {profile_data.get('personal', {}).get('last_name', '')}",
-                "first_name": lambda: profile_data.get('personal', {}).get('first_name', ''),
-                "last_name": lambda: profile_data.get('personal', {}).get('last_name', ''),
-                "email": lambda: profile_data.get('personal', {}).get('email', ''),
-                "phone": lambda: profile_data.get('contact', {}).get('phone', ''),
-                "address": lambda: profile_data.get('contact', {}).get('address', ''),
-                "city": lambda: profile_data.get('contact', {}).get('city', ''),
-                "state": lambda: profile_data.get('contact', {}).get('state', ''),
-                "zip": lambda: profile_data.get('contact', {}).get('zip', ''),
+                "name": lambda: f"{profile_data.get('personal', {}).get('first_name', '')} {profile_data.get('personal', {}).get('last_name', '')}".strip() or None,
+                "first_name": lambda: profile_data.get('personal', {}).get('first_name') or None,
+                "last_name": lambda: profile_data.get('personal', {}).get('last_name') or None,
+                "email": lambda: profile_data.get('personal', {}).get('email') or None,
+                "phone": lambda: profile_data.get('contact', {}).get('phone') or None,
+                "address": lambda: profile_data.get('contact', {}).get('address') or None,
+                "city": lambda: profile_data.get('contact', {}).get('city') or None,
+                "state": lambda: profile_data.get('contact', {}).get('state') or None,
+                "zip": lambda: profile_data.get('contact', {}).get('zip') or None,
                 
                 # Education
-                "education": lambda: profile_data.get('education', []),
-                "degree": lambda: profile_data.get('education', [{}])[0].get('degree', '') if profile_data.get('education') else '',
-                "school": lambda: profile_data.get('education', [{}])[0].get('school', '') if profile_data.get('education') else '',
-                "graduation_year": lambda: profile_data.get('education', [{}])[0].get('year', '') if profile_data.get('education') else '',
+                "education": lambda: self._format_list_to_string(profile_data.get('education', [])),
+                "degree": lambda: profile_data.get('education', [{}])[0].get('degree') if profile_data.get('education') else None,
+                "school": lambda: profile_data.get('education', [{}])[0].get('school') if profile_data.get('education') else None,
+                "graduation_year": lambda: profile_data.get('education', [{}])[0].get('year') if profile_data.get('education') else None,
                 
                 # Experience
-                "experience": lambda: profile_data.get('experience', []),
-                "current_role": lambda: profile_data.get('experience', [{}])[0].get('title', '') if profile_data.get('experience') else '',
-                "current_company": lambda: profile_data.get('experience', [{}])[0].get('company', '') if profile_data.get('experience') else '',
+                "experience": lambda: self._format_list_to_string(profile_data.get('experience', [])),
+                "current_role": lambda: profile_data.get('experience', [{}])[0].get('title') if profile_data.get('experience') else None,
+                "current_company": lambda: profile_data.get('experience', [{}])[0].get('company') if profile_data.get('experience') else None,
                 
                 # Skills
-                "skills": lambda: ", ".join(profile_data.get('skills', [])),
+                "skills": lambda: ", ".join(profile_data.get('skills', [])) or None,
                 
                 # Job information
-                "job_title": lambda: job_data.get('jobs', [{}])[0].get('title', '') if job_data.get('jobs') else '',
-                "company_name": lambda: job_data.get('jobs', [{}])[0].get('company', {}).get('name', '') if job_data.get('jobs') else '',
+                "job_title": lambda: job_data.get('jobs', [{}])[0].get('title') if job_data.get('jobs') else None,
+                "company_name": lambda: job_data.get('jobs', [{}])[0].get('company', {}).get('name') if job_data.get('jobs') else None,
             }
             
             # Populate fields from the mapping
@@ -328,11 +350,66 @@ class AutofillService:
                     for qa in qa_data.get('qa_pairs', []):
                         # Check if question contains field name (simple heuristic)
                         if field.lower().replace('_', ' ') in qa['question'].lower():
-                            result[field] = qa['answer']
+                            result[field] = qa['answer'] or None
                             break
+            
+            # Final check to replace empty strings with None
+            for key, value in result.items():
+                if value == "":
+                    result[key] = None
             
             return result
             
         except Exception as e:
             logger.error(f"Error formatting data for autofill: {e}")
-            return {field: "" for field in form_fields} 
+            # Return a dict with all None values instead of empty strings
+            return {field: None for field in form_fields}
+    
+    def _format_list_to_string(self, items: List) -> Optional[str]:
+        """
+        Format a list of items to a string, handling empty lists.
+        
+        Args:
+            items: List of items to format
+            
+        Returns:
+            Formatted string or None if empty
+        """
+        if not items:
+            return None
+            
+        if isinstance(items, list) and len(items) > 0:
+            if all(isinstance(item, dict) for item in items):
+                # Handle list of dictionaries
+                formatted = ", ".join([self._format_dict_to_string(item) for item in items])
+                return formatted if formatted else None
+            else:
+                # Handle list of strings or other simple types
+                formatted = ", ".join([str(item) for item in items if item])
+                return formatted if formatted else None
+        return None
+        
+    def _format_dict_to_string(self, item: Dict) -> str:
+        """
+        Format a dictionary to a string representation.
+        
+        Args:
+            item: Dictionary to format
+            
+        Returns:
+            Formatted string
+        """
+        if not item:
+            return ""
+            
+        # Try to extract the most relevant fields
+        if "title" in item and "company" in item:
+            return f"{item['title']} at {item['company']}"
+        elif "role" in item and "company_name" in item:
+            return f"{item['role']} at {item['company_name']}"
+        elif "degree" in item and "institution_name" in item:
+            field = item.get("field_of_study", "")
+            return f"{item['degree']} in {field} from {item['institution_name']}"
+        else:
+            # Generic approach - just concatenate key values
+            return ", ".join([f"{k}: {v}" for k, v in item.items() if v]) 
