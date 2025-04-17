@@ -506,14 +506,13 @@ async def direct_llm_suggestion(
         user_dict = {
             "name": f"{user.first_name} {user.last_name}",
             "email": user.email,
-            "headline": user.headline,
             "skills": [skill.skill_name for skill in user.skills] if user.skills else [],
             "experiences": [
                 {
                     "role": exp.role,
                     "company": exp.company_name,
                     "current": exp.is_current,
-                    "duration": f"{exp.start_year} - {exp.end_year or 'Present'}"
+                    "duration": f"{exp.start_date.year if hasattr(exp, 'start_date') and exp.start_date else 'Unknown'} - {exp.end_date.year if hasattr(exp, 'end_date') and exp.end_date else 'Present'}"
                 } 
                 for exp in user.work_experiences
             ] if user.work_experiences else [],
@@ -522,11 +521,17 @@ async def direct_llm_suggestion(
                     "degree": edu.degree,
                     "field": edu.field_of_study,
                     "institution": edu.institution_name,
-                    "year": edu.graduation_year
+                    "year": edu.end_date.year if hasattr(edu, 'end_date') and edu.end_date else None
                 }
                 for edu in user.educations
             ] if user.educations else []
         }
+        
+        # Add headline if it exists
+        if hasattr(user, 'headline') and user.headline:
+            user_dict["headline"] = user.headline
+        elif hasattr(user, 'summary') and user.summary:
+            user_dict["headline"] = user.summary
         
         # Initialize LLM service and generate response
         llm_service = LLMService()

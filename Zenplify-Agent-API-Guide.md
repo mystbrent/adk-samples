@@ -117,24 +117,31 @@ The API implementation must adhere to these validation requirements:
 - **Method**: `POST`
 - **Request Body**: 
   ```json
-  {
-    "first_name": "John",
-    "last_name": "Doe",
-    "email": "john.doe@example.com",
-    "github_username": "johndoe",
-    "linkedin_url": "https://linkedin.com/in/johndoe"
-  }
+  
   ```
   > **Note**: `first_name`, `last_name`, and `email` are required fields.
   
 - **Response (201 Created)**: 
   ```json
   {
-    "id": "7f8d3e2c-9a6b-4c5d-8e7f-1a2b3c4d5e6f",
-    "first_name": "John",
-    "last_name": "Doe",
-    "email": "john.doe@example.com",
-    "created_at": "2023-06-01T12:00:00Z"
+  "full_name": "Ferr John",
+  "email": "fj@test.com",
+  "phone": "string",
+  "address": {
+    "street1": "string",
+    "street2": "string",
+    "city": "string",
+    "state": "string",
+    "postal_code": "string",
+    "country": "string"
+  },
+  "github_username": "testgithub",
+  "linkedin_url": "https://example.com/",
+  "portfolio_url": "https://example.com/",
+  "website_url": "https://example.com/",
+  "work_experiences": [{ "company_name": "Microsoft Inc", "role": "Sr. Software Engineer", "start_date": "2020-10-10" }],
+  "educations": [{"degree": "MBA", "institution_name": "Harvard University", "start_date": "2010-10-10"}],
+  "skills": [{"skill_name": "Node.js"}]
   }
   ```
 - **Error Responses**:

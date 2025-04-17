@@ -12,6 +12,9 @@ from uuid import UUID
 import json
 
 from google.adk.models.google_llm import Gemini
+from google.adk.models import LlmRequest
+from google.cloud import aiplatform
+from google.oauth2 import service_account
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -24,8 +27,37 @@ class LLMService:
     
     def __init__(self):
         """Initialize the LLM service."""
+        self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+        self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+        self._initialize_vertex_ai()
         self.model = Gemini(model_name=GEMINI_MODEL)
         
+    def _initialize_vertex_ai(self):
+        """Initialize Vertex AI client with proper credentials."""
+        try:
+            # Check if credential path exists, if so use it
+            credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+            if credentials_path and os.path.exists(credentials_path):
+                credentials = service_account.Credentials.from_service_account_file(
+                    credentials_path
+                )
+                aiplatform.init(
+                    project=self.project_id,
+                    location=self.location,
+                    credentials=credentials
+                )
+            else:
+                # Use default credentials
+                aiplatform.init(
+                    project=self.project_id,
+                    location=self.location
+                )
+            logger.info("Vertex AI client initialized successfully for LLM service")
+        except Exception as e:
+            logger.error(f"Failed to initialize Vertex AI client: {e}")
+            # We'll let this propagate since we can't fall back for LLM
+            raise
+    
     async def generate_contextual_response(
         self,
         user_id: UUID,
@@ -46,8 +78,8 @@ class LLMService:
             Dict with generated response and metadata
         """
         try:
-            # Prepare system prompt
-            system_prompt = """
+            # Prepare complete prompt including system instructions
+            system_instruction = """
             You are an AI assistant helping with job applications. Your task is to generate
             a personalized and contextually appropriate response to a job application question.
             
@@ -86,15 +118,18 @@ class LLMService:
             
             user_prompt += "\nPlease generate a professional response to this question."
             
-            # Generate the response
-            logger.info(f"Generating response for question: {question}")
-            response = await self.model.generate_content_async(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt
+            # Create LLM request
+            llm_request = LlmRequest(
+                user_prompt=user_prompt,
+                system_prompt=system_instruction
             )
             
-            # Extract and process the response
-            main_suggestion = response.text.strip()
+            # Generate the response
+            logger.info(f"Generating response for question: {question}")
+            async for response in self.model.generate_content_async(llm_request):
+                # We only need the first response
+                main_suggestion = response.text.strip()
+                break
             
             # Generate alternative suggestions (simplified implementation)
             # In a real implementation, this could be more sophisticated
@@ -132,7 +167,7 @@ class LLMService:
             List of alternative suggestions
         """
         try:
-            system_prompt = """
+            system_instruction = """
             Generate two alternative formulations of the provided answer.
             The alternatives should:
             1. Convey essentially the same message and information
@@ -149,14 +184,18 @@ class LLMService:
             Please provide two alternative formulations of this answer.
             """
             
-            # Generate alternatives
-            response = await self.model.generate_content_async(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt
+            # Create LLM request
+            llm_request = LlmRequest(
+                user_prompt=user_prompt,
+                system_prompt=system_instruction
             )
             
-            # Process the response to extract alternatives
-            alternatives_text = response.text.strip()
+            # Generate alternatives
+            alternatives_text = ""
+            async for response in self.model.generate_content_async(llm_request):
+                # We only need the first response
+                alternatives_text = response.text.strip()
+                break
             
             # Split the response into separate alternatives
             # This is a simple implementation - could be more sophisticated
