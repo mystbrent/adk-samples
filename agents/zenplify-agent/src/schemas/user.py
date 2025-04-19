@@ -61,10 +61,11 @@ class AddressBase(BaseModel):
 # Request models
 class UserProfileCreate(BaseModel):
     """Model for creating a new user profile."""
-    full_name: str
+    first_name: str
+    last_name: str
     email: EmailStr
     phone: Optional[str] = None
-    address: Optional[AddressBase] = None
+    address_json: Optional[Dict[str, Any]] = None
     github_username: Optional[str] = None
     linkedin_url: Optional[HttpUrl] = None
     portfolio_url: Optional[HttpUrl] = None

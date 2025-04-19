@@ -80,50 +80,59 @@ class AutofillService:
                 "links": {}
             }
 
-            # Populate contact info - prioritize User model then UserProfile
-            # Assuming 'phone' is on User based on sample API response
+            # Populate contact info from the User model
             result["contact"]["phone"] = user.phone if hasattr(user, 'phone') and user.phone else None
-            # Assuming 'address_json' might be on UserProfile
-            if profile and hasattr(profile, 'address_json') and profile.address_json:
-                 # Assuming address_json is already a dict or convertible
-                 address_data = profile.address_json if isinstance(profile.address_json, dict) else json.loads(profile.address_json)
-                 result["contact"].update({ # Add address fields
-                     "address": address_data.get("street1"), # Map from potential schema
-                     "city": address_data.get("city"),
-                     "state": address_data.get("state"),
-                     "zip": address_data.get("postal_code"),
-                     "country": address_data.get("country"),
-                 })
+            # If address is stored as JSONB on User
+            if hasattr(user, 'address_json') and user.address_json:
+                 try:
+                     # Ensure address_json is a dict
+                     address_data = user.address_json if isinstance(user.address_json, dict) else json.loads(user.address_json)
+                     result["contact"].update({ # Add address fields
+                         "address": address_data.get("street1"),
+                         "city": address_data.get("city"),
+                         "state": address_data.get("state"),
+                         "zip": address_data.get("postal_code"),
+                         "country": address_data.get("country"),
+                     })
+                 except Exception as e:
+                     logger.error(f"Error processing User.address_json for user {user_id}: {e}")
+            
+            # Populate links directly from the User model
+            result["links"]["linkedin"] = str(user.linkedin_url) if hasattr(user, 'linkedin_url') and user.linkedin_url else None
+            result["links"]["github"] = f"https://github.com/{user.github_username}" if hasattr(user, 'github_username') and user.github_username else None
+            result["links"]["portfolio"] = str(user.portfolio_url) if hasattr(user, 'portfolio_url') and user.portfolio_url else None
+            result["links"]["website"] = str(user.website_url) if hasattr(user, 'website_url') and user.website_url else None
 
-            # Populate links from UserProfile if it exists
-            if profile:
-                result["links"]["linkedin"] = str(profile.linkedin_url) if hasattr(profile, 'linkedin_url') and profile.linkedin_url else None
-                result["links"]["github"] = f"https://github.com/{profile.github_username}" if hasattr(profile, 'github_username') and profile.github_username else None
-                result["links"]["portfolio"] = str(profile.portfolio_url) if hasattr(profile, 'portfolio_url') and profile.portfolio_url else None
-                result["links"]["website"] = str(profile.website_url) if hasattr(profile, 'website_url') and profile.website_url else None
-
-            # Optional: Merge profile.data JSON for potential overrides or extra fields
+            # Optional: Merge profile.data JSON (from UserProfile) for potential overrides
             if profile and profile.data:
                 try:
                     profile_json_data = json.loads(profile.data) if isinstance(profile.data, str) else profile.data
                     if isinstance(profile_json_data, dict):
-                        # Example: Override contact info if present in JSON
+                        # Example: Override contact/links if present in UserProfile JSON
                         if "contact" in profile_json_data and isinstance(profile_json_data["contact"], dict):
-                             # Map JSON contact fields to result["contact"] structure
-                             contact_json = profile_json_data["contact"]
-                             result["contact"]["phone"] = contact_json.get("phone", result["contact"]["phone"])
-                             result["contact"]["address"] = contact_json.get("address", result["contact"].get("address"))
-                             result["contact"]["city"] = contact_json.get("city", result["contact"].get("city"))
-                             result["contact"]["state"] = contact_json.get("state", result["contact"].get("state"))
-                             result["contact"]["zip"] = contact_json.get("zip", result["contact"].get("zip"))
-                             result["contact"]["country"] = contact_json.get("country", result["contact"].get("country"))
-                        # Add logic here if JSON should override/supplement education/experience/skills from relations
-                        # For simplicity, we primarily rely on relational data now.
+                            contact_json = profile_json_data["contact"]
+                            # Only update fields present in the JSON
+                            for key in ["phone", "address", "city", "state", "zip", "country"]:
+                                if key in contact_json:
+                                     # Map JSON keys to result keys if different (e.g., 'street1' -> 'address')
+                                     result_key = key if key != "street1" else "address" 
+                                     result_key = result_key if key != "postal_code" else "zip"
+                                     result["contact"][result_key] = contact_json[key]
+                                     
+                        if "links" in profile_json_data and isinstance(profile_json_data["links"], dict):
+                             links_json = profile_json_data["links"]
+                             for key in ["linkedin", "github", "portfolio", "website"]:
+                                if key in links_json:
+                                    result["links"][key] = links_json[key]
+
+                        # Handle potential overrides for education/experience/skills if needed
+
                 except Exception as e:
                     logger.error(f"Error processing UserProfile.data JSON for user {user_id}: {e}")
 
-            # Clean up None values in contact before returning
+            # Clean up None values in contact and links before returning
             result["contact"] = {k: v for k, v in result["contact"].items() if v is not None}
+            result["links"] = {k: v for k, v in result["links"].items() if v is not None}
 
             return result
 

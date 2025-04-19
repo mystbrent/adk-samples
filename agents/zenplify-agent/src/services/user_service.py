@@ -83,12 +83,11 @@ class UserService:
             raise ValueError(f"User with email {user_data.email} already exists")
         
         # Create address JSON if provided
-        address_json = user_data.address.dict() if user_data.address else None
+        address_json = user_data.address_json if user_data.address_json else None
         
         # Split full_name into first_name and last_name
-        name_parts = user_data.full_name.split(' ', 1)
-        first_name = name_parts[0]
-        last_name = name_parts[1] if len(name_parts) > 1 else ""
+        first_name = user_data.first_name
+        last_name = user_data.last_name
         
         # Create user object
         user = User(
