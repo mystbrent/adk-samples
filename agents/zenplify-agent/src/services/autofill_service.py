@@ -69,6 +69,8 @@ class AutofillService:
                     "first_name": user.first_name or "John",
                     "last_name": user.last_name or "Doe",
                     "email": user.email or "user@example.com",
+                    "gender": user.gender if hasattr(user, 'gender') and user.gender else None,
+                    "date_of_birth": str(user.date_of_birth) if hasattr(user, 'date_of_birth') and user.date_of_birth else None,
                 },
                 # Directly include relational data (lists of model objects)
                 # These will be formatted later in format_for_autofill
@@ -313,7 +315,9 @@ class AutofillService:
                 "portfolio": formatted_data.get("portfolio") or None,
                 "website": formatted_data.get("website") or None,
                 "company": formatted_data.get("current_company") or None,
-                "currentJob": formatted_data.get("current_role") or None
+                "currentJob": formatted_data.get("current_role") or None,
+                "gender": formatted_data.get("gender") or None,
+                "dateOfBirth": formatted_data.get("date_of_birth") or None
             }
             
             # Final validation - ensure all values are either proper strings or null, never empty strings
@@ -354,6 +358,8 @@ class AutofillService:
                 "first_name": lambda: profile_data.get('personal', {}).get('first_name') or None,
                 "last_name": lambda: profile_data.get('personal', {}).get('last_name') or None,
                 "email": lambda: profile_data.get('personal', {}).get('email') or None,
+                "gender": lambda: profile_data.get('personal', {}).get('gender') or None,
+                "date_of_birth": lambda: profile_data.get('personal', {}).get('date_of_birth') or None,
 
                 # Contact information (now sourced primarily from get_user_profile_data structure)
                 "phone": lambda: profile_data.get('contact', {}).get('phone') or None,

@@ -48,6 +48,8 @@ class User(Base):
     linkedin_url = Column(String(255), nullable=True)
     portfolio_url = Column(String(255), nullable=True)
     website_url = Column(String(255), nullable=True)
+    gender = Column(String(50), nullable=True)
+    date_of_birth = Column(Date, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

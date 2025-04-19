@@ -70,6 +70,8 @@ class UserProfileCreate(BaseModel):
     linkedin_url: Optional[HttpUrl] = None
     portfolio_url: Optional[HttpUrl] = None
     website_url: Optional[HttpUrl] = None
+    gender: Optional[str] = None
+    date_of_birth: Optional[date] = None
     work_experiences: Optional[List[WorkExperienceBase]] = []
     educations: Optional[List[EducationBase]] = []
     skills: Optional[List[UserSkillBase]] = []

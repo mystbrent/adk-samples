@@ -100,6 +100,8 @@ class UserService:
             linkedin_url=str(user_data.linkedin_url) if user_data.linkedin_url else None,
             portfolio_url=str(user_data.portfolio_url) if user_data.portfolio_url else None,
             website_url=str(user_data.website_url) if user_data.website_url else None,
+            gender=user_data.gender,
+            date_of_birth=user_data.date_of_birth,
         )
         
         try:
