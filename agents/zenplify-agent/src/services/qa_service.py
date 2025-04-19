@@ -53,7 +53,8 @@ class QAService:
         self, 
         user_id: UUID, 
         question: str, 
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        generate_alternatives: bool = False
     ) -> Dict[str, Any]:
         """
         Suggest an answer for a question based on Q&A history or user profile.
@@ -62,6 +63,7 @@ class QAService:
             user_id: User ID
             question: Question text
             context: Additional context (company, job, etc.)
+            generate_alternatives: Flag to generate alternatives
             
         Returns:
             Dict: Suggested answer with confidence score
@@ -90,8 +92,13 @@ class QAService:
         # If no similar question found, generate an answer using the LLM
         logger.info("No similar question found, generating answer using LLM.")
         try:
-            # Generate response using LLM, passing user profile
-            generated_response = await self._generate_answer_from_profile(user, question, context)
+            # Generate response using LLM, passing user profile and alternatives flag
+            generated_response = await self._generate_answer_from_profile(
+                user,
+                question,
+                context,
+                generate_alternatives=generate_alternatives
+            )
             return generated_response
         except Exception as e:
             logger.error(f"Error generating answer using LLM: {e}")
@@ -276,7 +283,8 @@ class QAService:
         self, 
         user: User, 
         question: str, 
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        generate_alternatives: bool = False
     ) -> Dict[str, Any]:
         """
         Generate an answer based on user profile using the LLMService.
@@ -285,6 +293,7 @@ class QAService:
             user: User object with profile data
             question: Question text
             context: Additional context
+            generate_alternatives: Flag to generate alternatives
             
         Returns:
             Dict: Generated response dictionary from LLMService
@@ -326,7 +335,8 @@ class QAService:
                 user_id=user.id,
                 question=question,
                 context=context,
-                user_profile=user_profile_data
+                user_profile=user_profile_data,
+                generate_alternatives=generate_alternatives
             )
             return response_dict
             

@@ -87,7 +87,8 @@ class LLMService:
         user_id: UUID,
         question: str,
         context: Optional[Dict[str, Any]] = None,
-        user_profile: Optional[Dict[str, Any]] = None
+        user_profile: Optional[Dict[str, Any]] = None,
+        generate_alternatives: bool = False
     ) -> Dict[str, Any]:
         """
         Generate a contextual response using the standard Vertex AI client.
@@ -97,6 +98,7 @@ class LLMService:
             question: Question text
             context: Additional context (company, job description, etc.)
             user_profile: User profile data for personalization
+            generate_alternatives: Whether to generate alternative suggestions
             
         Returns:
             Dict with generated response and metadata
@@ -167,8 +169,10 @@ class LLMService:
             
             main_suggestion = response.candidates[0].content.parts[0].text.strip()
                             
-            # Generate alternative suggestions
-            alternatives = await self._generate_alternatives(question, main_suggestion)
+            # Generate alternative suggestions only if requested
+            alternatives = []
+            if generate_alternatives:
+                alternatives = await self._generate_alternatives(question, main_suggestion)
             
             return {
                 "suggestion": main_suggestion,

@@ -198,6 +198,7 @@ async def get_autofill_data(
 @router.post("/unidentified-fields/suggest/", response_model=UnidentifiedFieldSuggestion)
 async def suggest_for_unidentified_field(
     request: UnidentifiedFieldRequest,
+    generate_alternatives: bool = Query(False, description="Whether to generate alternative suggestions"),
     db: Session = Depends(get_db)
 ):
     """
@@ -221,7 +222,8 @@ async def suggest_for_unidentified_field(
         suggestion = await qa_service.suggest_answer(
             user_id=request.user_id,
             question=request.field_label,
-            context=request.context
+            context=request.context,
+            generate_alternatives=generate_alternatives
         )
         
         # Validate that suggestion is not empty
@@ -451,6 +453,7 @@ def get_user_qa_pairs(
 @router.post("/unidentified-fields/direct-suggest/", response_model=UnidentifiedFieldSuggestion)
 async def direct_llm_suggestion(
     request: DirectLLMRequest,
+    generate_alternatives: bool = Query(False, description="Whether to generate alternative suggestions"),
     db: Session = Depends(get_db)
 ):
     """
@@ -507,7 +510,8 @@ async def direct_llm_suggestion(
             user_id=request.user_id,
             question=request.question,
             context=request.context,
-            user_profile=user_dict
+            user_profile=user_dict,
+            generate_alternatives=generate_alternatives
         )
         
         # Convert to response model
