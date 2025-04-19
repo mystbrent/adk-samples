@@ -13,10 +13,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 import uuid
 from datetime import datetime
+import asyncio
 
 from src.database.models import User, QAHistory
 from src.services.user_service import UserService
 from src.services.embedding_service import EmbeddingService
+from src.services.llm_service import LLMService
 from ..api.schemas import QAPair, QAPairCreate
 # Remove the MongoDB imports since they're not available
 # from ..database import qa_pairs_collection, users_collection
@@ -45,8 +47,9 @@ class QAService:
         self.db = db
         self.user_service = UserService(db)
         self.embedding_service = EmbeddingService()
+        self.llm_service = LLMService()
     
-    def suggest_answer(
+    async def suggest_answer(
         self, 
         user_id: UUID, 
         question: str, 
@@ -74,27 +77,30 @@ class QAService:
         # First try to find a similar question in Q&A history
         similar_qa = self.find_similar_questions(user_id, question, min_similarity=0.7, limit=1)
         
-        if similar_qa and len(similar_qa) > 0:
-            # Found a similar question, return its answer
-            best_match = similar_qa[0]
+        # Use the found similar Q&A if the list is not empty
+        if similar_qa:
+            logger.info(f"Found similar Q&A in history with similarity: {similar_qa[0]['similarity']:.2f}")
             return {
-                "suggestion": best_match["answer"],
-                "confidence": best_match["similarity"],
+                "suggestion": similar_qa[0]["answer"],
+                "confidence": similar_qa[0]['similarity'], # Use the actual similarity score
                 "source": "qa_history",
-                "alternative_suggestions": None
+                "alternative_suggestions": [] # Can be populated later if needed
             }
-        else:
-            # No similar question found, generate an answer
-            # In a real implementation, this would use an LLM to generate
-            # a personalized answer based on the user's profile and context
             
-            # Placeholder answer generator
-            generated_answer = self._generate_answer_from_profile(user, question, context)
+        # If no similar question found, generate an answer using the LLM
+        logger.info("No similar question found, generating answer using LLM.")
+        try:
+            # Generate response using LLM, passing user profile
+            generated_response = await self._generate_answer_from_profile(user, question, context)
+            return generated_response
+        except Exception as e:
+            logger.error(f"Error generating answer using LLM: {e}")
+            # Fallback response if LLM fails
             return {
-                "suggestion": generated_answer,
-                "confidence": 0.6,  # Lower confidence for generated answers
-                "source": "profile_data",
-                "alternative_suggestions": None
+                "suggestion": "Could not generate a suggestion at this time.",
+                "confidence": 0.1,
+                "source": "error_fallback",
+                "alternative_suggestions": []
             }
     
     def find_similar_questions(
@@ -266,16 +272,14 @@ class QAService:
         """
         return self.embedding_service.get_embedding(text)
     
-    def _generate_answer_from_profile(
+    async def _generate_answer_from_profile(
         self, 
         user: User, 
         question: str, 
         context: Optional[Dict[str, Any]] = None
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
-        Generate an answer based on user profile.
-        
-        In a real implementation, this would use an LLM.
+        Generate an answer based on user profile using the LLMService.
         
         Args:
             user: User object with profile data
@@ -283,42 +287,53 @@ class QAService:
             context: Additional context
             
         Returns:
-            str: Generated answer
+            Dict: Generated response dictionary from LLMService
         """
-        # Very basic placeholder implementation that returns canned responses
-        # based on question keywords
-        question_lower = question.lower()
+        logger.info(f"Generating answer for '{question[:50]}...' using LLM and profile for user {user.id}")
         
-        if any(word in question_lower for word in ["experience", "work history", "job history"]):
-            experiences = user.work_experiences
-            if experiences:
-                latest = next((exp for exp in experiences if exp.is_current), experiences[0])
-                return f"I have {len(experiences)} years of work experience, most recently as a {latest.role} at {latest.company_name}."
-            return "I have experience in various roles throughout my career."
-            
-        elif any(word in question_lower for word in ["education", "degree", "university", "college"]):
-            educations = user.educations
-            if educations:
-                highest = educations[0]  # Assuming sorted by recency
-                return f"I have a {highest.degree} in {highest.field_of_study or 'my field'} from {highest.institution_name}."
-            return "I have completed my education with focus on relevant coursework."
-            
-        elif any(word in question_lower for word in ["skill", "technology", "programming", "language"]):
-            skills = user.skills
-            skill_list = ", ".join([skill.skill_name for skill in skills[:5]]) if skills else "various technical skills"
-            return f"My key skills include {skill_list}."
-            
-        elif any(word in question_lower for word in ["strength", "quality", "good at"]):
-            return "My key strengths include problem-solving, teamwork, and attention to detail."
-            
-        elif any(word in question_lower for word in ["weakness", "improve", "challenge"]):
-            return "I continuously work on improving my time management skills by prioritizing tasks effectively."
-            
-        elif any(word in question_lower for word in ["salary", "compensation", "pay", "expect"]):
-            return "My salary expectations are flexible and based on the overall compensation package, responsibilities, and growth opportunities."
+        # Format user profile data for the LLM
+        # (Convert complex objects to simpler representations if needed)
+        user_profile_data = {
+            "name": f"{user.first_name} {user.last_name}",
+            "email": user.email,
+            "phone": user.phone,
+            "location": user.address_json,
+            # "headline": user.headline,
+            # "summary": user.summary,
+            "work_experience": [
+                {
+                    "role": exp.role,
+                    "company": exp.company_name,
+                    "duration": f"{exp.start_date} to {exp.end_date or 'Present'}",
+                    "description": exp.description
+                } for exp in user.work_experiences
+            ],
+            "education": [
+                {
+                    "institution": edu.institution_name,
+                    "degree": edu.degree,
+                    "field_of_study": edu.field_of_study,
+                    "duration": f"{edu.start_date} to {edu.end_date or 'Present'}"
+                } for edu in user.educations
+            ],
+            "skills": [skill.skill_name for skill in user.skills]
+            # Add other relevant profile fields if needed
+        }
         
-        # Generic fallback response
-        return "I would be happy to discuss this further in an interview."
+        try:
+            # Call the LLM service
+            response_dict = await self.llm_service.generate_contextual_response(
+                user_id=user.id,
+                question=question,
+                context=context,
+                user_profile=user_profile_data
+            )
+            return response_dict
+            
+        except Exception as e:
+            logger.error(f"LLMService call failed during answer generation: {e}")
+            # Re-raise or return a specific error structure
+            raise # Re-raise the exception for the caller (suggest_answer) to handle
 
     # Comment out MongoDB functions since they're not compatible with current database setup
     """

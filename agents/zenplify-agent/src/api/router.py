@@ -217,8 +217,8 @@ async def suggest_for_unidentified_field(
                 detail={"status": "error", "message": "User not found", "requestId": str(uuid.uuid4())}
             )
         
-        # Generate suggestion
-        suggestion = qa_service.suggest_answer(
+        # Generate suggestion (Add await here)
+        suggestion = await qa_service.suggest_answer(
             user_id=request.user_id,
             question=request.field_label,
             context=request.context
