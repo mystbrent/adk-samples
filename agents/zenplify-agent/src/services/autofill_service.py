@@ -9,10 +9,11 @@ import logging
 import json
 from uuid import UUID
 from typing import Dict, Any, List, Optional
-from sqlalchemy.orm import Session
+from datetime import date
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.database.models import User, UserProfile, QAPair, Job, Company
+from src.database.models import User, UserProfile, QAPair, Job, Company, WorkExperience, Education, UserSkill
 from src.services.qa_service import QAService
 
 # Configure logging
@@ -38,61 +39,100 @@ class AutofillService:
     
     def get_user_profile_data(self, user_id: UUID) -> Dict[str, Any]:
         """
-        Retrieve user profile data for autofill.
+        Retrieve comprehensive user profile data including related entities.
         
         Args:
             user_id: UUID of the user
             
         Returns:
-            Dict containing user profile data
+            Dict containing structured user profile data or empty dict on error.
         """
         try:
-            # Query the user and their profile
-            user = self.db.query(User).filter(User.id == user_id).first()
-            
+            # Query User and eagerly load related profile, experiences, educations, skills
+            # Assumes relationships User.profile, User.work_experiences, User.educations, User.skills exist
+            user = self.db.query(User).options(
+                joinedload(User.profile),
+                joinedload(User.work_experiences),
+                joinedload(User.educations),
+                joinedload(User.skills)
+            ).filter(User.id == user_id).first()
+
             if not user:
                 logger.error(f"User not found: {user_id}")
                 return {}
-            
-            profile = self.db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-            
-            # Start with basic user data
+
+            profile = user.profile # Access eagerly loaded profile
+
+            # Build the result dictionary
             result = {
                 "personal": {
-                    "first_name": user.first_name or "John",  # Default if empty
-                    "last_name": user.last_name or "Doe",     # Default if empty
-                    "email": user.email or "user@example.com",  # Default if empty
-                }
+                    "first_name": user.first_name or "John",
+                    "last_name": user.last_name or "Doe",
+                    "email": user.email or "user@example.com",
+                },
+                # Directly include relational data (lists of model objects)
+                # These will be formatted later in format_for_autofill
+                "experience": user.work_experiences if user.work_experiences else [],
+                "education": user.educations if user.educations else [],
+                "skills": user.skills if user.skills else [], # List of Skill objects
+                 # Initialize contact and links, populate from User/UserProfile
+                "contact": {},
+                "links": {}
             }
-            
-            # Add profile data if available
+
+            # Populate contact info - prioritize User model then UserProfile
+            # Assuming 'phone' is on User based on sample API response
+            result["contact"]["phone"] = user.phone if hasattr(user, 'phone') and user.phone else None
+            # Assuming 'address_json' might be on UserProfile
+            if profile and hasattr(profile, 'address_json') and profile.address_json:
+                 # Assuming address_json is already a dict or convertible
+                 address_data = profile.address_json if isinstance(profile.address_json, dict) else json.loads(profile.address_json)
+                 result["contact"].update({ # Add address fields
+                     "address": address_data.get("street1"), # Map from potential schema
+                     "city": address_data.get("city"),
+                     "state": address_data.get("state"),
+                     "zip": address_data.get("postal_code"),
+                     "country": address_data.get("country"),
+                 })
+
+            # Populate links from UserProfile if it exists
             if profile:
-                # Parse the JSON data from the profile
-                profile_data = profile.data if isinstance(profile.data, dict) else json.loads(profile.data)
-                
-                # Add contact information
-                if "contact" in profile_data:
-                    result["contact"] = profile_data["contact"]
-                
-                # Add education information
-                if "education" in profile_data:
-                    result["education"] = profile_data["education"]
-                
-                # Add work experience
-                if "experience" in profile_data:
-                    result["experience"] = profile_data["experience"]
-                
-                # Add skills
-                if "skills" in profile_data:
-                    result["skills"] = profile_data["skills"]
-            
+                result["links"]["linkedin"] = str(profile.linkedin_url) if hasattr(profile, 'linkedin_url') and profile.linkedin_url else None
+                result["links"]["github"] = f"https://github.com/{profile.github_username}" if hasattr(profile, 'github_username') and profile.github_username else None
+                result["links"]["portfolio"] = str(profile.portfolio_url) if hasattr(profile, 'portfolio_url') and profile.portfolio_url else None
+                result["links"]["website"] = str(profile.website_url) if hasattr(profile, 'website_url') and profile.website_url else None
+
+            # Optional: Merge profile.data JSON for potential overrides or extra fields
+            if profile and profile.data:
+                try:
+                    profile_json_data = json.loads(profile.data) if isinstance(profile.data, str) else profile.data
+                    if isinstance(profile_json_data, dict):
+                        # Example: Override contact info if present in JSON
+                        if "contact" in profile_json_data and isinstance(profile_json_data["contact"], dict):
+                             # Map JSON contact fields to result["contact"] structure
+                             contact_json = profile_json_data["contact"]
+                             result["contact"]["phone"] = contact_json.get("phone", result["contact"]["phone"])
+                             result["contact"]["address"] = contact_json.get("address", result["contact"].get("address"))
+                             result["contact"]["city"] = contact_json.get("city", result["contact"].get("city"))
+                             result["contact"]["state"] = contact_json.get("state", result["contact"].get("state"))
+                             result["contact"]["zip"] = contact_json.get("zip", result["contact"].get("zip"))
+                             result["contact"]["country"] = contact_json.get("country", result["contact"].get("country"))
+                        # Add logic here if JSON should override/supplement education/experience/skills from relations
+                        # For simplicity, we primarily rely on relational data now.
+                except Exception as e:
+                    logger.error(f"Error processing UserProfile.data JSON for user {user_id}: {e}")
+
+            # Clean up None values in contact before returning
+            result["contact"] = {k: v for k, v in result["contact"].items() if v is not None}
+
             return result
-            
+
         except SQLAlchemyError as e:
             logger.error(f"Database error retrieving user profile: {e}")
+            # Consider raising a custom exception or returning a specific error structure
             return {}
         except Exception as e:
-            logger.error(f"Error retrieving user profile data: {e}")
+            logger.error(f"Unexpected error retrieving user profile data: {e}")
             return {}
     
     def get_job_data(self, user_id: UUID, job_id: Optional[UUID] = None) -> Dict[str, Any]:
@@ -224,16 +264,12 @@ class AutofillService:
                 raise ValueError("User profile not found or incomplete")
             
             # Form fields to autofill
-            form_fields = []
-            if context and isinstance(context, dict) and 'form_fields' in context and context['form_fields']:
-                form_fields = context['form_fields']
-            else:
-                # Default set of common fields if none provided
-                form_fields = [
-                    "first_name", "last_name", "email", "phone", "address", "city", "state", 
-                    "zip", "country", "education", "experience", "skills", "linkedin", "github",
-                    "current_role", "current_company"
-                ]
+            form_fields = [
+                "first_name", "last_name", "email", "phone", "address", "city", "state", 
+                "zip", "country", "education", "experience", "skills", "linkedin", "github",
+                "portfolio", "website", # Added portfolio, website
+                "current_role", "current_company"
+            ]
             
             # Format data for autofill
             formatted_data = self.format_for_autofill(user_id, form_fields, context)
@@ -290,53 +326,55 @@ class AutofillService:
 
     def format_for_autofill(self, user_id: UUID, form_fields: List[str], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Format data for form autofill based on requested fields.
-        
-        Args:
-            user_id: UUID of the user
-            form_fields: List of field names to populate
-            context: Optional context for the form (company, job, etc.)
-            
-        Returns:
-            Dict mapping field names to values
+        Format data for form autofill based on requested fields. 
+        Uses data retrieved by get_user_profile_data (including model objects).
         """
         try:
             # Get all data sources
             profile_data = self.get_user_profile_data(user_id)
-            job_data = self.get_job_data(user_id) if "job" in form_fields or "company" in form_fields else {}
+            job_data = self.get_job_data(user_id) # No change needed here for now
             qa_data = self.get_qa_history(user_id, context=context, limit=50)
             
             # Initialize result with null values for all requested fields
             result = {field: None for field in form_fields}
             
-            # Map form fields to data sources
+            # Map form fields to data sources using the new structure from get_user_profile_data
             field_mapping = {
                 # Personal information
                 "name": lambda: f"{profile_data.get('personal', {}).get('first_name', '')} {profile_data.get('personal', {}).get('last_name', '')}".strip() or None,
                 "first_name": lambda: profile_data.get('personal', {}).get('first_name') or None,
                 "last_name": lambda: profile_data.get('personal', {}).get('last_name') or None,
                 "email": lambda: profile_data.get('personal', {}).get('email') or None,
+
+                # Contact information (now sourced primarily from get_user_profile_data structure)
                 "phone": lambda: profile_data.get('contact', {}).get('phone') or None,
-                "address": lambda: profile_data.get('contact', {}).get('address') or None,
+                "address": lambda: profile_data.get('contact', {}).get('address') or None, 
                 "city": lambda: profile_data.get('contact', {}).get('city') or None,
                 "state": lambda: profile_data.get('contact', {}).get('state') or None,
                 "zip": lambda: profile_data.get('contact', {}).get('zip') or None,
+                "country": lambda: profile_data.get('contact', {}).get('country') or None, # Added country mapping
                 
-                # Education
-                "education": lambda: self._format_list_to_string(profile_data.get('education', [])),
-                "degree": lambda: profile_data.get('education', [{}])[0].get('degree') if profile_data.get('education') else None,
-                "school": lambda: profile_data.get('education', [{}])[0].get('school') if profile_data.get('education') else None,
-                "graduation_year": lambda: profile_data.get('education', [{}])[0].get('year') if profile_data.get('education') else None,
+                # Education (Uses new helper with List[Education])
+                "education": lambda: self._format_education_list(profile_data.get('education', [])),
+                "degree": lambda: profile_data.get('education', [None])[0].degree if profile_data.get('education') and profile_data.get('education')[0] else None,
+                "school": lambda: profile_data.get('education', [None])[0].institution_name if profile_data.get('education') and profile_data.get('education')[0] else None,
+                # "graduation_year": lambda: ..., # Add if needed, requires date formatting
+
+                # Experience (Uses new helpers with List[WorkExperience])
+                "experience": lambda: self._format_experience_list(profile_data.get('experience', [])),
+                "current_role": lambda: self._get_current_role(profile_data.get('experience', [])),
+                "current_company": lambda: self._get_current_company(profile_data.get('experience', [])),
                 
-                # Experience
-                "experience": lambda: self._format_list_to_string(profile_data.get('experience', [])),
-                "current_role": lambda: profile_data.get('experience', [{}])[0].get('title') if profile_data.get('experience') else None,
-                "current_company": lambda: profile_data.get('experience', [{}])[0].get('company') if profile_data.get('experience') else None,
+                # Skills (Uses new helper with List[UserSkill])
+                "skills": lambda: self._format_skills_list(profile_data.get('skills', [])),
                 
-                # Skills
-                "skills": lambda: ", ".join(profile_data.get('skills', [])) or None,
-                
-                # Job information
+                # Links (now sourced from profile_data["links"])
+                "linkedin": lambda: profile_data.get('links', {}).get('linkedin') or None,
+                "github": lambda: profile_data.get('links', {}).get('github') or None,
+                "portfolio": lambda: profile_data.get('links', {}).get('portfolio') or None,
+                "website": lambda: profile_data.get('links', {}).get('website') or None,
+
+                # Job information (from get_job_data, likely no changes needed here)
                 "job_title": lambda: job_data.get('jobs', [{}])[0].get('title') if job_data.get('jobs') else None,
                 "company_name": lambda: job_data.get('jobs', [{}])[0].get('company', {}).get('name') if job_data.get('jobs') else None,
             }
@@ -365,51 +403,81 @@ class AutofillService:
             # Return a dict with all None values instead of empty strings
             return {field: None for field in form_fields}
     
-    def _format_list_to_string(self, items: List) -> Optional[str]:
-        """
-        Format a list of items to a string, handling empty lists.
+    def _format_education_list(self, educations: List[Education]) -> Optional[str]:
+        """Format a list of Education model objects into a string."""
+        if not educations: return None
+        # Example format: "Degree in Field from Institution, ..."
+        parts = []
+        for edu in educations:
+            part = f"{edu.degree or ''}"
+            if edu.field_of_study:
+                 part += f" in {edu.field_of_study}"
+            if edu.institution_name:
+                 part += f" from {edu.institution_name}"
+            if part.strip(" from in"): # Avoid empty strings if all fields are None
+                 parts.append(part.strip())
         
-        Args:
-            items: List of items to format
-            
-        Returns:
-            Formatted string or None if empty
-        """
-        if not items:
-            return None
-            
-        if isinstance(items, list) and len(items) > 0:
-            if all(isinstance(item, dict) for item in items):
-                # Handle list of dictionaries
-                formatted = ", ".join([self._format_dict_to_string(item) for item in items])
-                return formatted if formatted else None
-            else:
-                # Handle list of strings or other simple types
-                formatted = ", ".join([str(item) for item in items if item])
-                return formatted if formatted else None
+        formatted = ", ".join(parts)
+        return formatted if formatted else None
+
+    def _format_experience_list(self, experiences: List[WorkExperience]) -> Optional[str]:
+        """Format a list of WorkExperience model objects into a string."""
+        if not experiences: return None
+        # Example format: "Role at Company, ..."
+        # Sort by recency (current first, then by end_date)
+        experiences.sort(key=lambda x: (x.is_current is not True, x.end_date is not None, x.end_date), reverse=True)
+        
+        parts = []
+        for exp in experiences:
+            part = ""
+            if exp.role:
+                 part += f"{exp.role}"
+            if exp.company_name:
+                 part += f" at {exp.company_name}"
+            if part.strip(" at"):
+                 parts.append(part.strip())
+                 
+        formatted = ", ".join(parts)
+        return formatted if formatted else None
+
+    def _format_skills_list(self, skills: List[UserSkill]) -> Optional[str]:
+        """Format a list of UserSkill model objects into a comma-separated string."""
+        if not skills: return None
+        formatted = ", ".join([skill.skill_name for skill in skills if skill.skill_name])
+        return formatted if formatted else None
+
+    def _get_current_role(self, experiences: List[WorkExperience]) -> Optional[str]:
+        """Find the current role from a list of experiences."""
+        # Prioritize explicitly marked current job
+        for exp in experiences:
+            if hasattr(exp, 'is_current') and exp.is_current:
+                return exp.role
+        # Fallback: Find job with None end_date or most recent end_date
+        if experiences:
+            experiences.sort(key=lambda x: (x.end_date is not None, x.end_date), reverse=True) # None end_date first
+            return experiences[0].role
         return None
-        
-    def _format_dict_to_string(self, item: Dict) -> str:
-        """
-        Format a dictionary to a string representation.
-        
-        Args:
-            item: Dictionary to format
-            
-        Returns:
-            Formatted string
-        """
-        if not item:
-            return ""
-            
-        # Try to extract the most relevant fields
-        if "title" in item and "company" in item:
-            return f"{item['title']} at {item['company']}"
-        elif "role" in item and "company_name" in item:
-            return f"{item['role']} at {item['company_name']}"
-        elif "degree" in item and "institution_name" in item:
-            field = item.get("field_of_study", "")
-            return f"{item['degree']} in {field} from {item['institution_name']}"
-        else:
-            # Generic approach - just concatenate key values
-            return ", ".join([f"{k}: {v}" for k, v in item.items() if v]) 
+
+    def _get_current_company(self, experiences: List[WorkExperience]) -> Optional[str]:
+        """Find the current company from a list of experiences."""
+        # Prioritize explicitly marked current job
+        for exp in experiences:
+            if hasattr(exp, 'is_current') and exp.is_current:
+                return exp.company_name
+        # Fallback: Find job with None end_date or most recent end_date
+        if experiences:
+            experiences.sort(key=lambda x: (x.end_date is not None, x.end_date), reverse=True) # None end_date first
+            return experiences[0].company_name
+        return None
+
+    # Remove or comment out old formatters if no longer needed
+    # def _format_list_to_string(self, items: List) -> Optional[str]: ...
+    # def _format_dict_to_string(self, item: Dict) -> str: ...
+
+# Ensure imports for date at the top if used for sorting
+# Ensure necessary models (WorkExperience, Education, UserSkill) are imported
+
+# Final checks:
+# - Assumes SQLAlchemy relationships (User.profile, User.work_experiences etc.) are correctly defined.
+# - Assumes field names like `is_current`, `linkedin_url` match the actual model definitions.
+# - Formatting logic in helper methods matches the expected string format for Zenplify. 

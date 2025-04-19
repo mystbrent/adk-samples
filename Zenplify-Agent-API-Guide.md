@@ -40,9 +40,8 @@ Example of a proper 200 OK response:
 ```json
 {
   "user_data": {
-    "firstName": "John",
-    "lastName": "Doe",
-    "email": "john.doe@example.com",
+    "full_name": "John Doe",
+    "email": "john1.doe@example.com",
     "phone": "555-123-4567",
     "address": "123 Main St",
     "city": "Anytown",

@@ -27,11 +27,9 @@ logger = logging.getLogger(__name__)
 # Check if pgvector is available
 try:
     from pgvector.sqlalchemy import Vector
-    from pgvector.sqlalchemy.functions import cosine_distance
     VECTOR_AVAILABLE = True
 except ImportError:
     Vector = None
-    cosine_distance = None
     VECTOR_AVAILABLE = False
 
 class QAService:
@@ -133,12 +131,14 @@ class QAService:
         results = (
             self.db.query(
                 QAHistory,
-                # Calculate cosine similarity (1 - cosine_distance)
-                (1 - func.cosine_distance(QAHistory.question_embedding, embedding)).label("similarity")
+                # Calculate cosine similarity (1 - cosine_distance) using the vector column method
+                (1 - QAHistory.question_embedding.cosine_distance(embedding)).label("similarity")
             )
             .filter(QAHistory.user_id == user_id)
-            .filter((1 - func.cosine_distance(QAHistory.question_embedding, embedding)) >= min_similarity)
-            .order_by((1 - func.cosine_distance(QAHistory.question_embedding, embedding)).desc())
+            # Use the vector column method here too
+            .filter((1 - QAHistory.question_embedding.cosine_distance(embedding)) >= min_similarity)
+            # And here for ordering
+            .order_by((1 - QAHistory.question_embedding.cosine_distance(embedding)).desc())
             .limit(limit)
             .all()
         )
