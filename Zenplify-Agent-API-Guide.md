@@ -123,22 +123,25 @@ The API implementation must adhere to these validation requirements:
 - **Response (201 Created)**: 
   ```json
   {
-  "full_name": "Ferr John",
-  "email": "fj@test.com",
-  "phone": "string",
-  "address": {
-    "street1": "string",
+  "first_name": "Gen",
+  "last_name": "Mak",
+  "email": "smith231@test.com",
+  "phone": "0155812581",
+  "address_json": {
     "street2": "string",
-    "city": "string",
-    "state": "string",
-    "postal_code": "string",
-    "country": "string"
+    "street1": "123 Main St",
+    "city": "Anytown",
+    "state": "CA",
+    "zip": "12345",
+    "country": "USA"
   },
   "github_username": "testgithub",
-  "linkedin_url": "https://example.com/",
-  "portfolio_url": "https://example.com/",
-  "website_url": "https://example.com/",
-  "work_experiences": [{ "company_name": "Microsoft Inc", "role": "Sr. Software Engineer", "start_date": "2020-10-10" }],
+  "gender": "Male",
+  "date_of_birth": "1990-10-10",
+  "linkedin_url": "https://linkedin.com/",
+  "portfolio_url": "https://jake.com/",
+  "website_url": "https://jakeweb.com/",
+  "work_experiences": [{ "company_name": "Microsoft Inc", "role": "Sr. Software Engineer", "start_date": "2020-10-10", "end_date": "2021-10-10" }],
   "educations": [{"degree": "MBA", "institution_name": "Harvard University", "start_date": "2010-10-10"}],
   "skills": [{"skill_name": "Node.js"}]
   }

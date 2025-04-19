@@ -81,7 +81,7 @@ class UserProfileUpdate(BaseModel):
     full_name: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
-    address: Optional[AddressBase] = None
+    address_json: Optional[Dict[str, Any]] = None
     github_username: Optional[str] = None
     linkedin_url: Optional[HttpUrl] = None
     portfolio_url: Optional[HttpUrl] = None
@@ -130,6 +130,8 @@ class UserProfileResponse(BaseModel):
     linkedin_url: Optional[str] = None
     portfolio_url: Optional[str] = None
     website_url: Optional[str] = None
+    gender: Optional[str] = None
+    date_of_birth: Optional[date] = None
     created_at: datetime
     updated_at: datetime
     work_experiences: List[WorkExperienceResponse] = []

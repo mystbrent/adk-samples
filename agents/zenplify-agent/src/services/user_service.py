@@ -82,6 +82,9 @@ class UserService:
         if existing_user:
             raise ValueError(f"User with email {user_data.email} already exists")
         
+        # Log the received address_json for debugging
+        logger.info(f"Received address_json in create_user: {user_data.address_json}")
+        
         # Create address JSON if provided
         address_json = user_data.address_json if user_data.address_json else None
         
@@ -162,8 +165,9 @@ class UserService:
             user.email = user_data.email
         if user_data.phone is not None:
             user.phone = user_data.phone
-        if user_data.address is not None:
-            user.address_json = user_data.address.dict()
+        if user_data.address_json is not None:
+            # Directly assign the dictionary
+            user.address_json = user_data.address_json
         if user_data.github_username is not None:
             user.github_username = user_data.github_username
         if user_data.linkedin_url is not None:

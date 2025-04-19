@@ -82,22 +82,35 @@ class AutofillService:
                 "links": {}
             }
 
-            # Populate contact info from the User model
+            # 1. Populate contact info primarily from User model fields
             result["contact"]["phone"] = user.phone if hasattr(user, 'phone') and user.phone else None
+            
+            # Initialize address fields to None
+            result["contact"].update({
+                "address": None, "city": None, "state": None, "zip": None, "country": None
+            })
+            
             # If address is stored as JSONB on User
             if hasattr(user, 'address_json') and user.address_json:
-                 try:
-                     # Ensure address_json is a dict
-                     address_data = user.address_json if isinstance(user.address_json, dict) else json.loads(user.address_json)
-                     result["contact"].update({ # Add address fields
-                         "address": address_data.get("street1"),
-                         "city": address_data.get("city"),
-                         "state": address_data.get("state"),
-                         "zip": address_data.get("postal_code"),
-                         "country": address_data.get("country"),
-                     })
-                 except Exception as e:
-                     logger.error(f"Error processing User.address_json for user {user_id}: {e}")
+                try:
+                    # Ensure address_json is a dict (handle potential string or None)
+                    raw_address = user.address_json
+                    if isinstance(raw_address, str):
+                        address_data = json.loads(raw_address)
+                    elif isinstance(raw_address, dict):
+                        address_data = raw_address
+                    else:
+                        address_data = {} # Default to empty dict if None or unexpected type
+                        
+                    result["contact"].update({ # Add address fields
+                        "address": address_data.get("street1"),
+                        "city": address_data.get("city"),
+                        "state": address_data.get("state"),
+                        "zip": address_data.get("postal_code"),
+                        "country": address_data.get("country"),
+                    })
+                except Exception as e:
+                    logger.error(f"Error processing User.address_json for user {user_id}: {e}")
             
             # Populate links directly from the User model
             result["links"]["linkedin"] = str(user.linkedin_url) if hasattr(user, 'linkedin_url') and user.linkedin_url else None
@@ -108,24 +121,49 @@ class AutofillService:
             # Optional: Merge profile.data JSON (from UserProfile) for potential overrides
             if profile and profile.data:
                 try:
-                    profile_json_data = json.loads(profile.data) if isinstance(profile.data, str) else profile.data
+                    # Ensure profile.data is a dict
+                    profile_json_data = json.loads(profile.data) if isinstance(profile.data, str) else (profile.data if isinstance(profile.data, dict) else {})
+                    
                     if isinstance(profile_json_data, dict):
-                        # Example: Override contact/links if present in UserProfile JSON
+                        # 2. Fill missing contact info from UserProfile.data if available
                         if "contact" in profile_json_data and isinstance(profile_json_data["contact"], dict):
                             contact_json = profile_json_data["contact"]
-                            # Only update fields present in the JSON
-                            for key in ["phone", "address", "city", "state", "zip", "country"]:
-                                if key in contact_json:
-                                     # Map JSON keys to result keys if different (e.g., 'street1' -> 'address')
-                                     result_key = key if key != "street1" else "address" 
-                                     result_key = result_key if key != "postal_code" else "zip"
-                                     result["contact"][result_key] = contact_json[key]
-                                     
+                            # Fill phone if missing
+                            if result["contact"].get("phone") is None:
+                                result["contact"]["phone"] = contact_json.get("phone")
+                            # Fill address components if missing, checking common key variations
+                            if result["contact"].get("address") is None:
+                                result["contact"]["address"] = contact_json.get("address") or contact_json.get("street1")
+                            if result["contact"].get("city") is None:
+                                result["contact"]["city"] = contact_json.get("city")
+                            if result["contact"].get("state") is None:
+                                result["contact"]["state"] = contact_json.get("state")
+                            if result["contact"].get("zip") is None:
+                                result["contact"]["zip"] = contact_json.get("zip") or contact_json.get("postal_code")
+                            if result["contact"].get("country") is None:
+                                result["contact"]["country"] = contact_json.get("country")
+
                         if "links" in profile_json_data and isinstance(profile_json_data["links"], dict):
+                            # Fill missing links
                              links_json = profile_json_data["links"]
                              for key in ["linkedin", "github", "portfolio", "website"]:
-                                if key in links_json:
-                                    result["links"][key] = links_json[key]
+                                if result["links"].get(key) is None:
+                                     result["links"][key] = links_json.get(key)
+
+                        # Also check personal overrides from UserProfile JSON
+                        if "personal" in profile_json_data and isinstance(profile_json_data["personal"], dict):
+                            if "gender" in profile_json_data["personal"] and result["personal"]["gender"] is None:
+                                result["personal"]["gender"] = profile_json_data["personal"]["gender"]
+                            if "date_of_birth" in profile_json_data["personal"] and result["personal"]["date_of_birth"] is None:
+                                dob_str = profile_json_data["personal"]["date_of_birth"]
+                                # Attempt to parse date string if it's not already a date object
+                                try:
+                                    # Assuming YYYY-MM-DD format in JSON
+                                    parsed_date = date.fromisoformat(dob_str)
+                                    result["personal"]["date_of_birth"] = str(parsed_date)
+                                except (TypeError, ValueError):
+                                     # If parsing fails or it's not a string, keep original (or None)
+                                     logger.warning(f"Could not parse date_of_birth '{dob_str}' from UserProfile.data for user {user_id}")
 
                         # Handle potential overrides for education/experience/skills if needed
 
@@ -283,7 +321,7 @@ class AutofillService:
             ]
             
             # Format data for autofill
-            formatted_data = self.format_for_autofill(user_id, form_fields, context)
+            formatted_data = self.format_for_autofill(user_id, profile_data, form_fields, context)
             
             # Ensure required fields have values
             if not formatted_data.get("first_name"):
@@ -337,19 +375,15 @@ class AutofillService:
             # Re-raise for HTTP error handling
             raise
 
-    def format_for_autofill(self, user_id: UUID, form_fields: List[str], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def format_for_autofill(self, user_id: UUID, profile_data: Dict[str, Any], form_fields: List[str], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Format data for form autofill based on requested fields. 
         Uses data retrieved by get_user_profile_data (including model objects).
         """
         try:
-            # Get all data sources
-            profile_data = self.get_user_profile_data(user_id)
+            # Use the profile_data passed as an argument
             job_data = self.get_job_data(user_id) # No change needed here for now
             qa_data = self.get_qa_history(user_id, context=context, limit=50)
-            
-            # Initialize result with null values for all requested fields
-            result = {field: None for field in form_fields}
             
             # Map form fields to data sources using the new structure from get_user_profile_data
             field_mapping = {
@@ -394,22 +428,23 @@ class AutofillService:
                 "company_name": lambda: job_data.get('jobs', [{}])[0].get('company', {}).get('name') if job_data.get('jobs') else None,
             }
             
-            # Populate fields from the mapping
-            for field in form_fields:
-                if field in field_mapping:
-                    result[field] = field_mapping[field]()
-                else:
-                    # For fields not in the mapping, try to find an answer in Q&A history
+            # Initialize result dictionary
+            result = {}
+
+            # Populate result by iterating through all defined mappings
+            for field, getter in field_mapping.items():
+                result[field] = getter()
+
+            # Optional: Fallback to Q&A for fields that are still None *and* were requested
+            # (Or simply let the None values pass through)
+            # Example: Only check Q&A for fields originally in form_fields that are still None
+            for field in form_fields: # Iterate through the *original* requested fields
+                if result.get(field) is None:
+                    # Try to find an answer in Q&A history for originally requested fields
                     for qa in qa_data.get('qa_pairs', []):
-                        # Check if question contains field name (simple heuristic)
                         if field.lower().replace('_', ' ') in qa['question'].lower():
                             result[field] = qa['answer'] or None
                             break
-            
-            # Final check to replace empty strings with None
-            for key, value in result.items():
-                if value == "":
-                    result[key] = None
             
             return result
             
