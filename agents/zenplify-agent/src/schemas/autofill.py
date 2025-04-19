@@ -166,6 +166,31 @@ class SaveQAPairResponse(BaseModel):
     message: str
     qa_id: Optional[UUID] = None
 
+class BatchUnidentifiedFieldItem(BaseModel):
+    """Represents a single item in the batch suggestion request."""
+    field_label: str
+    context: Optional[Dict[str, Any]] = None
+
+class BatchUnidentifiedFieldRequest(BaseModel):
+    """Request model for batch unidentified field suggestions."""
+    user_id: UUID
+    requests: List[BatchUnidentifiedFieldItem]
+    generate_alternatives: bool = False # Optional flag applies to all requests in the batch
+
+class SuggestionError(BaseModel):
+    """Model for representing an error during suggestion generation for a specific field."""
+    field_label: str # To identify which request failed
+    error: str
+    details: Optional[str] = None
+
+class BatchUnidentifiedFieldResponse(BaseModel):
+    """Response model for batch unidentified field suggestions.
+    
+    Contains a list of results, where each item is either a successful 
+    suggestion (UnidentifiedFieldSuggestion) or an error (SuggestionError).
+    """
+    results: List[Union[UnidentifiedFieldSuggestion, SuggestionError]]
+
 class DirectLLMRequest(BaseModel):
     """Request model for LLM-based direct answer generation."""
     user_id: UUID

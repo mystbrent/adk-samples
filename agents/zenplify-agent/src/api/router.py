@@ -7,7 +7,8 @@ This module defines FastAPI endpoints for interaction with the Zenplify Chrome e
 import uuid
 import logging
 import json
-from typing import Optional, List, Dict, Any
+import asyncio
+from typing import Optional, List, Dict, Any, Union
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from uuid import UUID
@@ -23,7 +24,10 @@ from src.schemas.autofill import (
     SaveQAPairRequest,
     SaveQAPairResponse,
     ZenplifyUserData,
-    DirectLLMRequest
+    DirectLLMRequest,
+    BatchUnidentifiedFieldRequest,
+    BatchUnidentifiedFieldResponse,
+    SuggestionError
 )
 from src.schemas.user import (
     UserProfileCreate,
@@ -538,4 +542,112 @@ async def direct_llm_suggestion(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
             detail={"status": "error", "message": "Failed to generate suggestion", "details": str(e)}
-        ) 
+        )
+
+@router.post("/unidentified-fields/suggest/batch/", response_model=BatchUnidentifiedFieldResponse)
+async def suggest_for_unidentified_field_batch(
+    batch_request: BatchUnidentifiedFieldRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Suggest answers for a batch of unidentified form fields in parallel.
+    
+    Processes multiple field suggestion requests concurrently for a single user.
+    Returns a list containing either a suggestion or an error for each input item.
+    """
+    qa_service = QAService(db)
+    user_service = UserService(db)
+
+    # --- 1. Validate User --- 
+    # Check user existence once for the entire batch
+    try:
+        user = user_service.get_user_by_id(batch_request.user_id)
+        if not user:
+            # If user not found, we cannot proceed with any suggestions
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"status": "error", "message": "User not found", "requestId": str(uuid.uuid4())}
+            )
+    except Exception as e:
+        logger.error(f"Error retrieving user {batch_request.user_id} during batch suggest: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"status": "error", "message": "Failed to retrieve user profile", "details": str(e)}
+        )
+
+    # --- 2. Prepare Tasks for Parallel Execution --- 
+    # Create a list of awaitable tasks for each suggestion request
+    tasks = []
+    if not batch_request.requests:
+        # Handle empty request list early
+        return BatchUnidentifiedFieldResponse(results=[])
+        
+    for item in batch_request.requests:
+        tasks.append(
+            qa_service.suggest_answer(
+                user_id=batch_request.user_id,
+                question=item.field_label,
+                context=item.context,
+                generate_alternatives=batch_request.generate_alternatives # Use the batch-level flag
+            )
+        )
+
+    # --- 3. Run Tasks in Parallel --- 
+    results_list: List[Union[UnidentifiedFieldSuggestion, SuggestionError]] = [] # Explicit type hint
+    try:
+        # Use asyncio.gather to run suggestion tasks concurrently
+        # return_exceptions=True ensures that exceptions are returned as results rather than stopping the gather
+        suggestion_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # --- 4. Process Results and Handle Errors --- 
+        for i, result in enumerate(suggestion_results):
+            original_request_item = batch_request.requests[i] # Get corresponding input item
+            
+            if isinstance(result, Exception):
+                # If an exception occurred for this specific task
+                logger.error(f"Error in batch suggestion for field '{original_request_item.field_label}' (user {batch_request.user_id}): {result}", exc_info=False)
+                results_list.append(SuggestionError(
+                    field_label=original_request_item.field_label,
+                    error="Suggestion generation failed",
+                    details=str(result) # Provide the exception message
+                ))
+            elif not result or not result.get("suggestion"):
+                # If the service returned an empty suggestion without error (e.g., LLM failed silently)
+                logger.warning(f"Empty suggestion returned for field '{original_request_item.field_label}' (user {batch_request.user_id})")
+                # Append a default suggestion, similar to the single endpoint logic
+                default_suggestion = UnidentifiedFieldSuggestion(
+                    suggestion="I would be a good fit for this position because of my relevant experience and skills.",
+                    confidence=0.5,
+                    source="default",
+                    alternative_suggestions=[] 
+                )
+                results_list.append(default_suggestion)
+            else:
+                # If a valid suggestion dictionary was returned
+                try:
+                    suggestion_obj = UnidentifiedFieldSuggestion(
+                        suggestion=result.get("suggestion"),
+                        confidence=result.get("confidence", 0.5),
+                        source=result.get("source", "generated"),
+                        alternative_suggestions=result.get("alternative_suggestions", [])
+                    )
+                    results_list.append(suggestion_obj)
+                except Exception as pydantic_error:
+                    # Handle potential errors during Pydantic model creation from the dict
+                    logger.error(f"Error converting result to Pydantic model for field '{original_request_item.field_label}': {pydantic_error}")
+                    results_list.append(SuggestionError(
+                        field_label=original_request_item.field_label,
+                        error="Internal processing error",
+                        details=str(pydantic_error)
+                    ))
+
+    except Exception as e:
+        # Catch unexpected errors during the gather or overall processing
+        logger.error(f"Unexpected error during batch suggestion processing for user {batch_request.user_id}: {e}", exc_info=True)
+        # This error affects the whole batch processing, so raise HTTPException
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"status": "error", "message": "Failed during batch suggestion processing", "details": str(e)}
+        )
+
+    return BatchUnidentifiedFieldResponse(results=results_list) 
