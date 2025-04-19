@@ -202,4 +202,25 @@ class DirectLLMRequest(BaseModel):
         """Validate that question is not empty."""
         if not v:
             raise ValueError("Question cannot be empty")
-        return v 
+        return v
+
+# --- Batch Direct LLM Schemas --- 
+
+class BatchDirectLLMItem(BaseModel):
+    """Represents a single item in the batch direct LLM suggestion request."""
+    question: str
+    context: Optional[Dict[str, Any]] = None
+    
+    @validator('question')
+    def question_not_empty(cls, v):
+        if not v:
+            raise ValueError("Question cannot be empty")
+        return v
+
+class BatchDirectLLMRequest(BaseModel):
+    """Request model for batch direct LLM suggestions."""
+    user_id: UUID
+    requests: List[BatchDirectLLMItem]
+    generate_alternatives: bool = False # Optional flag applies to all requests in the batch
+
+# We can reuse BatchUnidentifiedFieldResponse and SuggestionError for the response 

@@ -27,7 +27,8 @@ from src.schemas.autofill import (
     DirectLLMRequest,
     BatchUnidentifiedFieldRequest,
     BatchUnidentifiedFieldResponse,
-    SuggestionError
+    SuggestionError,
+    BatchDirectLLMRequest
 )
 from src.schemas.user import (
     UserProfileCreate,
@@ -648,6 +649,135 @@ async def suggest_for_unidentified_field_batch(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"status": "error", "message": "Failed during batch suggestion processing", "details": str(e)}
+        )
+
+    return BatchUnidentifiedFieldResponse(results=results_list)
+
+@router.post("/unidentified-fields/direct-suggest/batch/", response_model=BatchUnidentifiedFieldResponse)
+async def direct_llm_suggestion_batch(
+    batch_request: BatchDirectLLMRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Generate direct LLM-based answers for a batch of questions in parallel.
+    
+    Processes multiple direct LLM requests concurrently for a single user.
+    Returns a list containing either a suggestion or an error for each input item.
+    """
+    user_service = UserService(db)
+    llm_service = LLMService() # Initialize LLM Service
+
+    # --- 1. Validate User and Prepare Profile --- 
+    user_dict = None
+    try:
+        user = user_service.get_user_by_id(batch_request.user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"status": "error", "message": "User not found", "requestId": str(uuid.uuid4())}
+            )
+        
+        # Convert user to dict for LLM context (do this once)
+        user_dict = {
+            "name": f"{user.first_name} {user.last_name}",
+            "email": user.email,
+            "skills": [skill.skill_name for skill in user.skills] if user.skills else [],
+            "experiences": [
+                {
+                    "role": exp.role,
+                    "company": exp.company_name,
+                    "current": exp.is_current,
+                    "duration": f"{exp.start_date.year if hasattr(exp, 'start_date') and exp.start_date else 'Unknown'} - {exp.end_date.year if hasattr(exp, 'end_date') and exp.end_date else 'Present'}"
+                } 
+                for exp in user.work_experiences
+            ] if user.work_experiences else [],
+            "education": [
+                {
+                    "degree": edu.degree,
+                    "field": edu.field_of_study,
+                    "institution": edu.institution_name,
+                    "year": edu.end_date.year if hasattr(edu, 'end_date') and edu.end_date else None
+                }
+                for edu in user.educations
+            ] if user.educations else []
+        }
+        if hasattr(user, 'headline') and user.headline:
+            user_dict["headline"] = user.headline
+        elif hasattr(user, 'summary') and user.summary:
+            user_dict["headline"] = user.summary
+            
+    except HTTPException: # Re-raise user not found explicitly
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving user {batch_request.user_id} or preparing profile during batch direct suggest: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"status": "error", "message": "Failed to retrieve user profile", "details": str(e)}
+        )
+
+    # --- 2. Prepare Tasks for Parallel Execution --- 
+    tasks = []
+    if not batch_request.requests:
+        return BatchUnidentifiedFieldResponse(results=[])
+        
+    for item in batch_request.requests:
+        tasks.append(
+            llm_service.generate_contextual_response(
+                user_id=batch_request.user_id,
+                question=item.question,
+                context=item.context,
+                user_profile=user_dict, # Use pre-fetched user profile
+                generate_alternatives=batch_request.generate_alternatives # Use batch flag
+            )
+        )
+
+    # --- 3. Run Tasks in Parallel --- 
+    results_list: List[Union[UnidentifiedFieldSuggestion, SuggestionError]] = []
+    try:
+        llm_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # --- 4. Process Results and Handle Errors --- 
+        for i, result in enumerate(llm_results):
+            original_request_item = batch_request.requests[i]
+            
+            if isinstance(result, Exception):
+                logger.error(f"Error in batch direct LLM suggestion for question '{original_request_item.question[:50]}...' (user {batch_request.user_id}): {result}", exc_info=False)
+                results_list.append(SuggestionError(
+                    field_label=original_request_item.question, # Use question as identifier
+                    error="LLM suggestion generation failed",
+                    details=str(result)
+                ))
+            elif not result or not result.get("suggestion"):
+                logger.warning(f"Empty direct LLM suggestion returned for question '{original_request_item.question[:50]}...' (user {batch_request.user_id})")
+                # Append a default suggestion or error for LLM failure
+                results_list.append(SuggestionError(
+                    field_label=original_request_item.question,
+                    error="LLM failed to generate suggestion",
+                    details="The language model returned an empty response."
+                ))
+            else:
+                # Convert successful LLM response dict to Pydantic model
+                try:
+                    suggestion_obj = UnidentifiedFieldSuggestion(
+                        suggestion=result.get("suggestion"),
+                        confidence=result.get("confidence", 0.8), # Default confidence for LLM
+                        source=result.get("source", "llm_generation"),
+                        alternative_suggestions=result.get("alternative_suggestions", [])
+                    )
+                    results_list.append(suggestion_obj)
+                except Exception as pydantic_error:
+                    logger.error(f"Error converting direct LLM result to Pydantic model for question '{original_request_item.question[:50]}...': {pydantic_error}")
+                    results_list.append(SuggestionError(
+                        field_label=original_request_item.question,
+                        error="Internal processing error",
+                        details=str(pydantic_error)
+                    ))
+
+    except Exception as e:
+        logger.error(f"Unexpected error during batch direct LLM suggestion processing for user {batch_request.user_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"status": "error", "message": "Failed during batch direct LLM processing", "details": str(e)}
         )
 
     return BatchUnidentifiedFieldResponse(results=results_list) 
