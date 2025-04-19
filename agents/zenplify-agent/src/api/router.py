@@ -146,82 +146,50 @@ async def get_autofill_data(
         if context and hasattr(context, "dict"):
             context = context.dict()
             
-        # Get autofill data
-        autofill_data = autofill_service.get_autofill_data(
+        # Get autofill data (now returns a validated AutofillResponse object)
+        autofill_data: AutofillResponse = autofill_service.get_autofill_data(
             user_id=request.user_id,
             context=context
         )
         
-        # Validate required fields
-        if not autofill_data or not autofill_data.get("user_data"):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={
-                    "status": "error", 
-                    "message": "Profile data incomplete for required fields", 
-                    "details": "User profile is missing required data. Please complete your profile."
-                }
-            )
+        # --- Simplified Validation ---
+        # The service now returns a validated object.
+        # Check if the object or its user_data is None (e.g., if service raised ValueError)
+        if not autofill_data or not autofill_data.user_data:
+             # This case might be less likely now if the service raises exceptions properly,
+             # but it's good practice to check.
+             logger.error(f"Autofill service returned empty data for user {request.user_id}")
+             raise HTTPException(
+                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                 detail={
+                     "status": "error", 
+                     "message": "Profile data incomplete or service error", 
+                     "details": "User profile might be missing required data or an internal error occurred."
+                 }
+             )
+
+        # Pydantic validation for required fields (firstName, lastName, email) 
+        # happened inside the service when creating AutofillResponse. 
+        # No need for redundant checks or defaulting here.
         
-        # Get user data and create a validated ZenplifyUserData object
-        user_data = autofill_data.get("user_data", {})
+        # No need to convert empty strings or re-validate.
         
-        # Ensure required fields are present and non-empty
-        # Use default values if missing or empty
-        if not user_data.get("firstName") or user_data.get("firstName") == "":
-            user_data["firstName"] = "John"
-            
-        if not user_data.get("lastName") or user_data.get("lastName") == "":
-            user_data["lastName"] = "Doe"
-            
-        if not user_data.get("email") or user_data.get("email") == "":
-            user_data["email"] = "user@example.com"
-        
-        # Convert empty strings to None for optional fields
-        for key, value in user_data.items():
-            if key not in ["firstName", "lastName", "email"] and value == "":
-                user_data[key] = None
-        
-        # Create a validated ZenplifyUserData object
-        validated_user_data = ZenplifyUserData(
-            firstName=user_data["firstName"],
-            lastName=user_data["lastName"],
-            email=user_data["email"],
-            phone=user_data.get("phone"),
-            address=user_data.get("address"),
-            city=user_data.get("city"),
-            state=user_data.get("state"),
-            zip=user_data.get("zip"),
-            country=user_data.get("country"),
-            education=user_data.get("education"),
-            experience=user_data.get("experience"),
-            skills=user_data.get("skills"),
-            resume=user_data.get("resume"),
-            coverLetter=user_data.get("coverLetter"),
-            linkedin=user_data.get("linkedin"),
-            github=user_data.get("github"),
-            portfolio=user_data.get("portfolio"),
-            website=user_data.get("website"),
-            company=user_data.get("company"),
-            gender=user_data.get("gender"),
-            dateOfBirth=user_data.get("dateOfBirth"),
-            currentJob=user_data.get("currentJob")
-        )
-        
-        # Return AutofillResponse with validated user data
-        return AutofillResponse(user_data=validated_user_data)
+        # Return the fully validated AutofillResponse object directly
+        return autofill_data
         
     except HTTPException:
+        # Re-raise HTTPExceptions directly (e.g., 404 User not found)
         raise
     except ValueError as e:
-        logger.error(f"Validation error in autofill: {e}")
+        # Handle potential ValueErrors raised by the service (e.g., profile incomplete)
+        logger.error(f"Validation error during autofill data generation: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
             detail={"status": "error", "message": str(e), "requestId": str(uuid.uuid4())}
         )
     except Exception as e:
-        # Log the error
-        logger.error(f"Autofill error: {str(e)}", exc_info=True)
+        # Log unexpected errors
+        logger.error(f"Unexpected autofill error: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
             detail={"status": "error", "message": "Failed to generate autofill data", "details": str(e)}

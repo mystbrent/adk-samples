@@ -10,6 +10,13 @@ from datetime import date, datetime
 from uuid import UUID
 from pydantic import BaseModel, Field, validator
 
+# Import the detailed response schemas for embedding
+from src.schemas.user import (
+    WorkExperienceResponse,
+    EducationResponse,
+    UserSkillResponse,
+)
+
 class AutofillContext(BaseModel):
     """Context data for autofill requests."""
     company_name: Optional[str] = None
@@ -41,9 +48,9 @@ class ZenplifyUserData(BaseModel):
     state: Optional[str] = None
     zip: Optional[str] = None
     country: Optional[str] = None
-    education: Optional[str] = None  # Formatted as expected by Zenplify
-    experience: Optional[str] = None  # Formatted as expected by Zenplify
-    skills: Optional[str] = None  # Comma-separated list
+    education: Optional[List[EducationResponse]] = None  # Now a list of objects
+    experience: Optional[List[WorkExperienceResponse]] = None  # Now a list of objects
+    skills: Optional[List[UserSkillResponse]] = None  # Now a list of objects
     resume: Optional[str] = None  # URL to resume if available
     coverLetter: Optional[str] = None  # Text content if available
     linkedin: Optional[str] = None  # LinkedIn profile URL
@@ -69,89 +76,46 @@ class ZenplifyUserData(BaseModel):
             raise ValueError("This field is required and cannot be empty")
         return v
 
+    @staticmethod
+    def _parse_education(educations: List[Any]) -> Optional[List[EducationResponse]]:
+        """Convert DB Education models to EducationResponse schemas."""
+        try:
+            if not educations:
+                return None
+            return [EducationResponse.from_orm(edu) for edu in educations]
+        except Exception as e:
+            print(f"Error converting education data: {e}") # Replace with proper logging
+            return None
+
+    @staticmethod
+    def _parse_experience(experiences: List[Any]) -> Optional[List[WorkExperienceResponse]]:
+        """Convert DB WorkExperience models to WorkExperienceResponse schemas."""
+        try:
+            if not experiences:
+                return None
+            return [WorkExperienceResponse.from_orm(exp) for exp in experiences]
+        except Exception as e:
+            print(f"Error converting experience data: {e}") # Replace with proper logging
+            return None
+
+    @staticmethod
+    def _parse_skills(skills: List[Any]) -> Optional[List[UserSkillResponse]]:
+        """Convert DB UserSkill models to UserSkillResponse schemas."""
+        try:
+            if not skills:
+                return None
+            return [UserSkillResponse.from_orm(skill) for skill in skills]
+        except Exception as e:
+            print(f"Error converting skill data: {e}") # Replace with proper logging
+            return None
+
 class AutofillResponse(BaseModel):
-    """Response model for autofill requests."""
+    """Response model for autofill requests containing structured user data."""
     user_data: ZenplifyUserData
-    
-    @classmethod
-    def from_user_profile(cls, profile, context=None):
-        """
-        Convert a user profile to Zenplify-compatible format.
-        
-        Args:
-            profile: User profile data
-            context: Optional context about the job
-            
-        Returns:
-            AutofillResponse: Formatted data for Zenplify
-        """
-        # Name splitting logic (simple approach, can be enhanced)
-        name_parts = profile.full_name.split(' ', 1)
-        first_name = name_parts[0]
-        last_name = name_parts[1] if len(name_parts) > 1 else "Doe"  # Default last name
-        
-        # Get current job if available
-        current_job = None
-        current_company = None
-        for exp in profile.work_experiences:
-            if exp.is_current:
-                current_job = exp.role
-                current_company = exp.company_name
-                break
-        
-        # Format address components
-        address_data = profile.address_json or {}
-        
-        # Build Zenplify data structure with proper handling of empty strings
-        # For required fields, ensure they have non-empty values
-        # For optional fields, use None instead of empty strings
-        zenplify_data = ZenplifyUserData(
-            firstName=first_name or "John",  # Default value if empty
-            lastName=last_name or "Doe",     # Default value if empty
-            email=profile.email or "user@example.com",  # Default value if empty
-            phone=profile.phone if profile.phone else None,
-            address=address_data.get('street1') or None,
-            city=address_data.get('city') or None,
-            state=address_data.get('state') or None,
-            zip=address_data.get('postal_code') or None,
-            country=address_data.get('country') or None,
-            education=cls._format_education(profile.educations) or None,
-            experience=cls._format_experience(profile.work_experiences) or None,
-            skills=cls._format_skills(profile.skills) or None,
-            linkedin=str(profile.linkedin_url) if profile.linkedin_url else None,
-            github=f"https://github.com/{profile.github_username}" if profile.github_username else None,
-            portfolio=str(profile.portfolio_url) if profile.portfolio_url else None,
-            website=str(profile.website_url) if profile.website_url else None,
-            company=current_company or None,
-            currentJob=current_job or None,
-        )
-        
-        return cls(user_data=zenplify_data)
-    
-    @staticmethod
-    def _format_education(educations):
-        """Format education history for Zenplify."""
-        if not educations:
-            return None
-        formatted = ", ".join([f"{edu.degree} in {edu.field_of_study or 'N/A'} from {edu.institution_name}" 
-                              for edu in educations])
-        return formatted if formatted else None
-    
-    @staticmethod
-    def _format_experience(experiences):
-        """Format work experience for Zenplify."""
-        if not experiences:
-            return None
-        formatted = ", ".join([f"{exp.role} at {exp.company_name}" for exp in experiences])
-        return formatted if formatted else None
-    
-    @staticmethod
-    def _format_skills(skills):
-        """Format skills for Zenplify."""
-        if not skills:
-            return None
-        formatted = ", ".join([skill.skill_name for skill in skills])
-        return formatted if formatted else None
+
+    class Config:
+        # Ensure ORM mode is enabled if passing ORM objects directly to ZenplifyUserData
+        orm_mode = True
 
 class UnidentifiedFieldRequest(BaseModel):
     """Request model for unidentified field suggestions."""

@@ -39,24 +39,28 @@ A successful API response will:
 Example of a proper 200 OK response:
 ```json
 {
-  "user_data": {
-    "full_name": "John Doe",
-    "email": "john1.doe@example.com",
-    "phone": "555-123-4567",
-    "address": "123 Main St",
+  "first_name": "Gen",
+  "last_name": "Mak",
+  "email": "smith231@test.com",
+  "phone": "0155812581",
+  "address_json": {
+    "street2": "string",
+    "street1": "123 Main St",
     "city": "Anytown",
     "state": "CA",
-    "zip": "12345",
-    "country": "USA",
-    "education": "Bachelor's in Computer Science from Stanford University",
-    "experience": "Senior Developer at TechCorp, Software Engineer at StartupXYZ",
-    "skills": "Python, JavaScript, React, Machine Learning",
-    "linkedin": "https://linkedin.com/in/johndoe",
-    "github": "https://github.com/johndoe",
-    "company": "TechCorp",
-    "currentJob": "Senior Developer"
+    "postal_code": "12345",
+    "country": "USA"
+  },
+  "github_username": "testgithub",
+  "gender": "Male",
+  "date_of_birth": "1990-10-10",
+  "linkedin_url": "https://linkedin.com/",
+  "portfolio_url": "https://jake.com/",
+  "website_url": "https://jakeweb.com/",
+  "work_experiences": [{ "company_name": "Microsoft Inc", "role": "Sr. Software Engineer", "start_date": "2020-10-10", "end_date": "2021-10-10" }],
+  "educations": [{"degree": "MBA", "institution_name": "Harvard University", "start_date": "2010-10-10"}],
+  "skills": [{"skill_name": "Node.js"}]
   }
-}
 ```
 
 ### Error Responses
@@ -132,7 +136,7 @@ The API implementation must adhere to these validation requirements:
     "street1": "123 Main St",
     "city": "Anytown",
     "state": "CA",
-    "zip": "12345",
+    "postal_code": "12345",
     "country": "USA"
   },
   "github_username": "testgithub",

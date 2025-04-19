@@ -312,7 +312,7 @@ class AutofillService:
                 logger.warning(f"Profile data not found or incomplete for user: {user_id}")
                 raise ValueError("User profile not found or incomplete")
             
-            # Form fields to autofill
+            # Form fields to autofill (Note: This list might become less relevant now)
             form_fields = [
                 "first_name", "last_name", "email", "phone", "address", "city", "state", 
                 "zip", "country", "education", "experience", "skills", "linkedin", "github",
@@ -320,7 +320,7 @@ class AutofillService:
                 "current_role", "current_company"
             ]
             
-            # Format data for autofill
+            # Format data using helper (retrieves raw DB models for education/experience/skills)
             formatted_data = self.format_for_autofill(user_id, profile_data, form_fields, context)
             
             # Ensure required fields have values
@@ -333,9 +333,41 @@ class AutofillService:
             if not formatted_data.get("email"):
                 formatted_data["email"] = "user@example.com"  # Default value
             
-            # Convert to Zenplify format
-            # Convert generic field names to Zenplify field names and handle empty strings
-            zenplify_data = {
+            # --- BEGIN CONVERSION ---
+            # Convert DB model lists to Pydantic Response Schema lists
+            validated_education = None
+            validated_experience = None
+            validated_skills = None
+
+            try:
+                # Import necessary response schemas
+                from src.schemas.user import EducationResponse, WorkExperienceResponse, UserSkillResponse
+                
+                education_db_list = formatted_data.get("education", [])
+                if education_db_list:
+                    validated_education = [EducationResponse.from_orm(edu) for edu in education_db_list]
+
+                experience_db_list = formatted_data.get("experience", [])
+                if experience_db_list:
+                     # Sort experience before converting if needed (e.g., by recency)
+                     experience_db_list.sort(key=lambda x: (getattr(x, 'is_current', False) is not True, getattr(x, 'end_date', None) is not None, getattr(x, 'end_date', None)), reverse=True)
+                     validated_experience = [WorkExperienceResponse.from_orm(exp) for exp in experience_db_list]
+
+                skills_db_list = formatted_data.get("skills", [])
+                if skills_db_list:
+                    validated_skills = [UserSkillResponse.from_orm(skill) for skill in skills_db_list]
+
+            except Exception as conversion_error:
+                logger.error(f"Error converting DB models to Pydantic schemas during autofill: {conversion_error}", exc_info=True)
+                # Fail gracefully if conversion fails, preventing validation error but losing data
+                # Temporarily removed setting to None to reveal potential conversion errors
+                # Consider re-raising or handling more granularly based on logs
+                # Optionally re-raise or raise HTTPException if this data is critical
+                # raise HTTPException(status_code=500, detail="Internal error preparing structured data.")
+            # --- END CONVERSION ---
+
+            # Build the final dictionary using potentially converted lists
+            zenplify_data_dict = {
                 "firstName": formatted_data.get("first_name"),
                 "lastName": formatted_data.get("last_name"),
                 "email": formatted_data.get("email"),
@@ -345,27 +377,28 @@ class AutofillService:
                 "state": formatted_data.get("state") or None,
                 "zip": formatted_data.get("zip") or None,
                 "country": formatted_data.get("country") or None,
-                "education": formatted_data.get("education") or None,
-                "experience": formatted_data.get("experience") or None,
-                "skills": formatted_data.get("skills") or None,
+                "education": validated_education,      # Use the converted list
+                "experience": validated_experience,    # Use the converted list
+                "skills": validated_skills,          # Use the converted list
                 "linkedin": formatted_data.get("linkedin") or None,
                 "github": formatted_data.get("github") or None,
                 "portfolio": formatted_data.get("portfolio") or None,
                 "website": formatted_data.get("website") or None,
-                "company": formatted_data.get("current_company") or None,
-                "currentJob": formatted_data.get("current_role") or None,
-                "gender": formatted_data.get("gender") or None,
-                "dateOfBirth": formatted_data.get("date_of_birth") or None
+                "company": formatted_data.get("current_company") or None, # Still mapped from helpers
+                "currentJob": formatted_data.get("current_role") or None,  # Still mapped from helpers
+                "gender": formatted_data.get("gender") or None, # Mapped from format_for_autofill
+                "dateOfBirth": formatted_data.get("date_of_birth") or None # Mapped from format_for_autofill
             }
             
-            # Final validation - ensure all values are either proper strings or null, never empty strings
-            for key, value in zenplify_data.items():
+            # Final validation - ensure all values are either proper types or null, never empty strings
+            for key, value in zenplify_data_dict.items():
                 if value == "":
-                    zenplify_data[key] = None
+                    zenplify_data_dict[key] = None
             
-            # Return as AutofillResponse
+            # Return validated data within AutofillResponse structure
+            # Pydantic will validate zenplify_data_dict against ZenplifyUserData schema here
             from src.schemas.autofill import ZenplifyUserData, AutofillResponse
-            return {"user_data": zenplify_data}
+            return AutofillResponse(user_data=ZenplifyUserData(**zenplify_data_dict))
             
         except ValueError as e:
             logger.error(f"Value error generating autofill data: {e}")
@@ -403,19 +436,19 @@ class AutofillService:
                 "zip": lambda: profile_data.get('contact', {}).get('zip') or None,
                 "country": lambda: profile_data.get('contact', {}).get('country') or None, # Added country mapping
                 
-                # Education (Uses new helper with List[Education])
-                "education": lambda: self._format_education_list(profile_data.get('education', [])),
+                # Education (Now expects list of Education objects from profile_data)
+                "education": lambda: profile_data.get('education', []), 
                 "degree": lambda: profile_data.get('education', [None])[0].degree if profile_data.get('education') and profile_data.get('education')[0] else None,
                 "school": lambda: profile_data.get('education', [None])[0].institution_name if profile_data.get('education') and profile_data.get('education')[0] else None,
                 # "graduation_year": lambda: ..., # Add if needed, requires date formatting
 
-                # Experience (Uses new helpers with List[WorkExperience])
-                "experience": lambda: self._format_experience_list(profile_data.get('experience', [])),
+                # Experience (Now expects list of WorkExperience objects)
+                "experience": lambda: profile_data.get('experience', []), 
                 "current_role": lambda: self._get_current_role(profile_data.get('experience', [])),
                 "current_company": lambda: self._get_current_company(profile_data.get('experience', [])),
                 
-                # Skills (Uses new helper with List[UserSkill])
-                "skills": lambda: self._format_skills_list(profile_data.get('skills', [])),
+                # Skills (Now expects list of UserSkill objects)
+                "skills": lambda: profile_data.get('skills', []), 
                 
                 # Links (now sourced from profile_data["links"])
                 "linkedin": lambda: profile_data.get('links', {}).get('linkedin') or None,
@@ -453,49 +486,6 @@ class AutofillService:
             # Return a dict with all None values instead of empty strings
             return {field: None for field in form_fields}
     
-    def _format_education_list(self, educations: List[Education]) -> Optional[str]:
-        """Format a list of Education model objects into a string."""
-        if not educations: return None
-        # Example format: "Degree in Field from Institution, ..."
-        parts = []
-        for edu in educations:
-            part = f"{edu.degree or ''}"
-            if edu.field_of_study:
-                 part += f" in {edu.field_of_study}"
-            if edu.institution_name:
-                 part += f" from {edu.institution_name}"
-            if part.strip(" from in"): # Avoid empty strings if all fields are None
-                 parts.append(part.strip())
-        
-        formatted = ", ".join(parts)
-        return formatted if formatted else None
-
-    def _format_experience_list(self, experiences: List[WorkExperience]) -> Optional[str]:
-        """Format a list of WorkExperience model objects into a string."""
-        if not experiences: return None
-        # Example format: "Role at Company, ..."
-        # Sort by recency (current first, then by end_date)
-        experiences.sort(key=lambda x: (x.is_current is not True, x.end_date is not None, x.end_date), reverse=True)
-        
-        parts = []
-        for exp in experiences:
-            part = ""
-            if exp.role:
-                 part += f"{exp.role}"
-            if exp.company_name:
-                 part += f" at {exp.company_name}"
-            if part.strip(" at"):
-                 parts.append(part.strip())
-                 
-        formatted = ", ".join(parts)
-        return formatted if formatted else None
-
-    def _format_skills_list(self, skills: List[UserSkill]) -> Optional[str]:
-        """Format a list of UserSkill model objects into a comma-separated string."""
-        if not skills: return None
-        formatted = ", ".join([skill.skill_name for skill in skills if skill.skill_name])
-        return formatted if formatted else None
-
     def _get_current_role(self, experiences: List[WorkExperience]) -> Optional[str]:
         """Find the current role from a list of experiences."""
         # Prioritize explicitly marked current job
@@ -519,10 +509,6 @@ class AutofillService:
             experiences.sort(key=lambda x: (x.end_date is not None, x.end_date), reverse=True) # None end_date first
             return experiences[0].company_name
         return None
-
-    # Remove or comment out old formatters if no longer needed
-    # def _format_list_to_string(self, items: List) -> Optional[str]: ...
-    # def _format_dict_to_string(self, item: Dict) -> str: ...
 
 # Ensure imports for date at the top if used for sorting
 # Ensure necessary models (WorkExperience, Education, UserSkill) are imported

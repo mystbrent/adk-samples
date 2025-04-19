@@ -98,7 +98,7 @@ class WorkExperienceResponse(WorkExperienceBase):
     updated_at: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class EducationResponse(EducationBase):
     """Response model for education data."""
@@ -107,7 +107,7 @@ class EducationResponse(EducationBase):
     updated_at: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class UserSkillResponse(UserSkillBase):
     """Response model for user skill data."""
@@ -115,7 +115,7 @@ class UserSkillResponse(UserSkillBase):
     created_at: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class UserProfileResponse(BaseModel):
     """Response model for user profile data."""
@@ -144,5 +144,5 @@ class UserProfileResponse(BaseModel):
         return f"{self.first_name} {self.last_name}".strip()
     
     class Config:
-        orm_mode = True
+        from_attributes = True
         allow_population_by_field_name = True 
